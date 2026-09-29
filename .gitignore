@@ -1,0 +1,10 @@
+node_modules/
+release/
+build/*.png
+assets/icons/
+*.log
+.DS_Store
+Thumbs.db
+
+# Runtime user data when running from source (mirrors Electron's userData dir)
+.mvlp-dev-data/

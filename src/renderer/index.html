@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self';" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MVLP</title>
+<link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">MVLP</span>
+      </div>
+      <ul class="nav-list">
+        <li><button class="nav-item is-active" data-view="dashboard" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6V11h-6v9Zm0-16v5h6V4h-6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          Dashboard</button></li>
+        <li><button class="nav-item" data-view="devices" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="10" height="18" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="18" r="0.9" fill="currentColor"/><path d="M16 8c1.8 1.2 1.8 6.8 0 8M18.4 6c2.6 1.8 2.6 10.2 0 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Devices</button></li>
+        <li><button class="nav-item" data-view="studio" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="m9 8 3 2.2L9 12.4V8Z" fill="currentColor"/></svg>
+          Studio</button></li>
+        <li><button class="nav-item" data-view="settings" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V20a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .33-1.87 1.7 1.7 0 0 0-1.55-1.04H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.33-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.33H10a1.7 1.7 0 0 0 1.04-1.55V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V10a1.7 1.7 0 0 0 1.56 1.04H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1.04Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+          Settings</button></li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="status-pill" id="global-status-pill">
+          <span class="dot" id="global-status-dot"></span>
+          <span id="global-status-text">Idle</span>
+        </div>
+        <button class="nav-item nav-item-ghost" id="toggle-log-btn" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none"><path d="M4 5h16M4 12h16M4 19h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          Activity Log</button>
+      </div>
+    </nav>
+
+    <main class="content">
+      <section class="view" id="view-dashboard" data-view-section="dashboard"></section>
+      <section class="view" id="view-devices" data-view-section="devices" hidden></section>
+      <section class="view" id="view-studio" data-view-section="studio" hidden></section>
+      <section class="view" id="view-settings" data-view-section="settings" hidden></section>
+    </main>
+
+    <aside class="log-drawer" id="log-drawer" hidden>
+      <div class="log-drawer-header">
+        <h3>Activity Log</h3>
+        <button class="icon-btn" id="close-log-btn" type="button" aria-label="Close log">&times;</button>
+      </div>
+      <div class="log-drawer-body" id="log-entries"></div>
+    </aside>
+  </div>
+
+  <div class="overlay" id="modal-root" hidden></div>
+  <div class="toast-stack" id="toast-stack"></div>
+  <div class="overlay" id="onboarding-root" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

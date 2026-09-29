@@ -1,0 +1,131 @@
+{
+  "name": "mvlp",
+  "productName": "MVLP",
+  "version": "2.0.0",
+  "description": "MVLP connects iPixel-compatible LED panels to Multiviewer for F1 and Spotify, showing live track status and album art on your panel.",
+  "author": "dekiller82",
+  "license": "MIT",
+  "main": "src/main/index.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "previews": "node scripts/make-previews.js",
+    "icons": "node scripts/make-icons.js",
+    "dist": "npm run icons && electron-builder",
+    "dist:win": "npm run icons && electron-builder --win",
+    "dist:mac": "npm run icons && electron-builder --mac",
+    "dist:linux": "npm run icons && electron-builder --linux",
+    "dist:all": "npm run icons && electron-builder -mwl",
+    "postinstall": "node scripts/make-icons.js"
+  },
+  "dependencies": {
+    "@stoprocent/noble": "^2.8.0",
+    "electron-store": "^8.2.0",
+    "gifuct-js": "^2.1.2",
+    "jimp": "^0.22.12",
+    "omggif": "^1.0.10",
+    "rgbquant": "^1.1.2"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.mvlp.desktop",
+    "productName": "MVLP",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@stoprocent/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "maintainer": "dekiller82"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dekiller82/MVLP-2.0.git"
+  },
+  "homepage": "https://github.com/dekiller82/MVLP-2.0#readme",
+  "bugs": {
+    "url": "https://github.com/dekiller82/MVLP-2.0/issues"
+  },
+  "keywords": [
+    "f1",
+    "formula1",
+    "multiviewer",
+    "ipixel",
+    "led-matrix",
+    "bluetooth-le",
+    "spotify",
+    "electron"
+  ]
+}

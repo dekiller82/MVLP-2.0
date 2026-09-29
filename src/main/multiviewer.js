@@ -334,7 +334,7 @@ class MultiviewerPoller extends EventEmitter {
   _onSessionChanged(from, to) {
     logger.info('Multiviewer', `Session changed (${from} -> ${to}); starting fresh.`);
     this._endPreSession();
-    this._clearRaceScreens();
+    this._clearRaceScreens({ silent: true });
     this._resetSessionState();
     this.lastStatus = null;
     this.processedMessages = new Set();
@@ -471,32 +471,43 @@ class MultiviewerPoller extends EventEmitter {
     if (kind === this.resultKind) return;
     this.resultKind = kind;
     if (kind === null) this.emit('result', { kind: null });
-    else this._loadResult(kind, 0);
+    else this._loadResult(kind, 0, !this.seeded); // seen for the first time on connecting, not happening now
   }
 
   /** Reads the top three (with retries while the feed still withholds them) and announces the result. */
-  async _loadResult(kind, attempt) {
+  async _loadResult(kind, attempt, initial) {
     try {
       const state = await this._fetchState('TopThree');
       const top = state?.TopThree;
       const lines = top && !top.Withheld ? top.Lines || [] : [];
       if (this.resultKind !== kind) return; // no longer due (scrubbed back, or session changed)
       if (!lines.length) {
-        if (attempt < RESULT_MAX_TRIES) setTimeout(() => this._loadResult(kind, attempt + 1), RESULT_RETRY_MS);
+        if (attempt < RESULT_MAX_TRIES) setTimeout(() => this._loadResult(kind, attempt + 1, initial), RESULT_RETRY_MS);
         return;
       }
       const drivers = lines.slice(0, kind === 'podium' ? 3 : 1).map((l, i) => ({
         number: String(l.RacingNumber), tla: l.Tla, name: l.FullName || '', team: l.Team || '', color: l.TeamColour || '', position: i + 1,
       }));
       logger.info('Multiviewer', `${kind === 'podium' ? 'Podium' : 'Pole position'}: ${drivers.map((d) => d.tla).join(', ')}.`);
-      this.emit('result', { kind, drivers });
+      this.emit('result', { kind, drivers, initial });
     } catch (err) {
       logger.warn('Multiviewer', `Could not read the result: ${err.message}`);
     }
   }
 
-  _clearRaceScreens() {
+  /**
+   * Forgets the grid and result state. `silent` skips the "it is over" events, for a session
+   * change: the controller resets everything itself on that signal, and hearing "the result
+   * is gone" first would make it briefly show the old session's chequered flag again.
+   */
+  _clearRaceScreens({ silent = false } = {}) {
     this.gridWanted = false;
+    if (silent) {
+      this.gridActive = false;
+      this.gridSig = '';
+      this.resultKind = null;
+      return;
+    }
     this._endGrid();
     if (this.resultKind !== null) {
       this.resultKind = null;

@@ -51,7 +51,7 @@ function fillRect(c, x, y, w, h, rgb) {
  * Draws `text` with its left edge at `left`. With `outline`, every lit pixel of the
  * text is first surrounded by a 1 pixel border in that colour.
  */
-function drawText(c, text, scale, left, top, rgb, outline = null, clip = null) {
+function drawText(c, text, scale, left, top, rgb, outline = null, clip = null, gap = scale) {
   const put = (x, y, w, h, color) => {
     if (!clip) return fillRect(c, x, y, w, h, color);
     // Keep an outline from spilling out of the card it belongs to.
@@ -64,7 +64,7 @@ function drawText(c, text, scale, left, top, rgb, outline = null, clip = null) {
   [...text].forEach((ch, i) => {
     const glyph = GLYPHS[ch];
     if (!glyph) return;
-    const gx = left + i * 4 * scale;
+    const gx = left + i * (3 * scale + gap);
     for (let row = 0; row < 5; row++) {
       for (let col = 0; col < 3; col++) {
         if (glyph[row][col] === '#') cells.push([gx + col * scale, top + row * scale]);
@@ -75,9 +75,34 @@ function drawText(c, text, scale, left, top, rgb, outline = null, clip = null) {
   for (const [x, y] of cells) put(x, y, scale, scale, rgb);
 }
 
-/** Draws `text` centred on the column `centerX`. */
-function drawCentered(c, text, scale, centerX, top, rgb, outline = null, clip = null) {
-  drawText(c, text, scale, Math.round(centerX - (textUnits(text) * scale) / 2), top, rgb, outline, clip);
+/** Width in pixels of `text` at `scale` with `gap` pixels between glyphs. */
+const textWidth = (text, scale, gap) => text.length * 3 * scale + (text.length - 1) * gap;
+
+/**
+ * The gap between glyphs that lets `text` sit exactly in the middle of a region
+ * `regionWidth` wide. That needs the text and the region to have the same parity
+ * (a 14 px number cannot be centred in a 15 px card), so gaps near the natural one
+ * are tried until one fits with a pixel to spare for the outline. Falls back to the
+ * natural gap when no whole-pixel centring exists.
+ */
+function centeringGap(text, scale, regionWidth) {
+  const natural = scale;
+  if (text.length < 2) return natural;
+  const candidates = [natural];
+  for (let d = 1; d <= 3; d++) candidates.push(natural - d, natural + d);
+  for (const gap of candidates) {
+    if (gap < 1) continue;
+    const w = textWidth(text, scale, gap);
+    if (w + 2 <= regionWidth && (regionWidth - w) % 2 === 0) return gap;
+  }
+  return natural;
+}
+
+/** Draws `text` centred on the column `centerX`, within `clip` (or the whole canvas). */
+function drawCentered(c, text, scale, centerX, top, rgb, outline = null, clip = null, round = Math.round) {
+  const gap = centeringGap(text, scale, clip ? clip.w : c.width);
+  const left = round(centerX - textWidth(text, scale, gap) / 2);
+  drawText(c, text, scale, left, top, rgb, outline, clip, gap);
 }
 
 const frameOf = (c, delay) => ({ data: c.data, delay });
@@ -90,11 +115,13 @@ function encode(width, height, frames) {
  * A driver's number filled into the zone [zoneTop, zoneTop + zoneHeight), as big as
  * fits, centred on `centerX` within `maxWidth`.
  */
-function drawNumber(c, number, centerX, maxWidth, zoneTop, zoneHeight, rgb, outline = null, clip = null) {
+function drawNumber(c, number, centerX, maxWidth, zoneTop, zoneHeight, rgb, outline = null, clip = null, round = Math.round) {
   const text = String(number);
-  // Sized for two digits whatever the number, so 1 and 63 come out the same height.
-  const scale = Math.max(1, Math.min(fitScale('00', maxWidth, 99), Math.floor(zoneHeight / 5)));
-  drawCentered(c, text, scale, centerX, zoneTop + Math.floor((zoneHeight - 5 * scale) / 2), rgb, outline, clip);
+  // One size for every number, as big as two digits allow (with a pixel for the outline
+  // on each side), so 1 and 63 come out the same height.
+  let scale = Math.min(99, Math.floor(zoneHeight / 5));
+  while (scale > 1 && textWidth('00', scale, 1) + 2 > maxWidth) scale--;
+  drawCentered(c, text, scale, centerX, zoneTop + Math.floor((zoneHeight - 5 * scale) / 2), rgb, outline, clip || { x: 0, w: maxWidth }, round);
 }
 
 // ---- grid walkthrough ------------------------------------------------------------------
@@ -104,7 +131,7 @@ const GRID_SLIDE_MS = 70;
 const GRID_SLIDE_STEPS = [0.25, 0.5, 0.75];
 
 /** One driver on a coloured card: position on top, big number, three-letter code below. */
-function drawDriverCard(c, driver, x0, cardWidth) {
+function drawDriverCard(c, driver, x0, cardWidth, leftCard) {
   const bg = hexToRgb(driver.color);
   const { fg, outline } = textStyleFor();
   const h = c.height;
@@ -117,7 +144,9 @@ function drawDriverCard(c, driver, x0, cardWidth) {
   drawCentered(c, pos, fitScale(pos, cardWidth - 2, small), centerX, Math.round(h * 0.07), fg, outline, clip);
 
   const zoneTop = Math.round(h * 0.3);
-  drawNumber(c, driver.number, centerX, cardWidth, zoneTop, Math.round(h * 0.74) - zoneTop, fg, outline, clip);
+  // A single digit (6 px) cannot sit exactly in the middle of a 15 px card. Lean both cards
+  // towards the divider, so the pair stays symmetric about the middle of the screen.
+  drawNumber(c, driver.number, centerX, cardWidth, zoneTop, Math.round(h * 0.74) - zoneTop, fg, outline, clip, leftCard ? Math.ceil : Math.floor);
 
   const tlaScale = fitScale(driver.tla, cardWidth - 2, small);
   drawCentered(c, driver.tla, tlaScale, centerX, h - 5 * tlaScale - Math.round(h * 0.09), fg, outline, clip);
@@ -128,8 +157,8 @@ function drawPair(width, height, pair) {
   const c = newCanvas(width, height);
   const gap = width % 2 === 0 ? 2 : 1;
   const cardWidth = (width - gap) / 2;
-  drawDriverCard(c, pair[0], 0, cardWidth);
-  if (pair[1]) drawDriverCard(c, pair[1], cardWidth + gap, cardWidth);
+  drawDriverCard(c, pair[0], 0, cardWidth, true);
+  if (pair[1]) drawDriverCard(c, pair[1], cardWidth + gap, cardWidth, false);
   return c;
 }
 

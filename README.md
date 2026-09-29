@@ -214,15 +214,19 @@ These four screens draw drivers in their **team colors**, using the number and t
 </p>
 <p align="center"><sub>Grid walkthrough, race winner, podium, pole position</sub></p>
 
-**Grid walkthrough (races).** From 45 minutes before the scheduled start until the lights go out, the panel walks the grid from the front, two drivers at a time: P1 and P2, then P3 and P4, and so on, scrolling down the grid from one pair to the next and looping. Each card shows the position, the driver number and their code on the team color. All text is white with a black outline, so it stays readable on every team color, and all numbers are drawn at the same size. A full lap of a 22 car grid takes about half a minute. Flags and overlays that arrive during the walkthrough are remembered but not shown, and the right flag appears the moment the race starts. The order is the running order in Multiviewer's timing data; if it does not match the grid on your session, please open an issue.
+**Grid walkthrough (races).** From 45 minutes before the scheduled start until the lights go out, the panel walks the grid from the front, two drivers at a time: P1 and P2, then P3 and P4, and so on, scrolling down the grid from one pair to the next and looping. Each card shows the position, the driver number and their code on the team color. All text is white with a black outline, so it stays readable on every team color. All numbers are drawn at the same size and centered on their card, with the gap between the two digits chosen so a number sits exactly in the middle. A full lap of a 22 car grid takes about half a minute. Flags and overlays that arrive during the walkthrough are remembered but not shown, and the right flag appears the moment the race starts. The order is the running order in Multiviewer's timing data; if it does not match the grid on your session, please open an issue.
 
 <p align="center"><img src="docs/previews/grid-screens.png" alt="Every screen of a 22 car grid walkthrough" width="640"></p>
 
-**Winner (races).** When Race Control announces which car took the flag first, the panel shows the winner's number big on their team color with confetti, for 10 seconds.
+**The end of a race plays out in order**, however early the result is known. In a replay the top three are already there the moment the flag falls, so the screens are paced instead of jumping straight to the result:
 
-**Podium (races).** Once the session is finished, the winner screen gives way to the podium: three blocks in the team colors of the top three, the winner tallest in the middle, with gold, silver and bronze places. It stays up until the next session. If you connect after the finish, you go straight to the podium.
+1. **Chequered flag.** It stays up for at least 15 seconds.
+2. **Winner (races).** When Race Control announces which car took the flag first, the panel shows the winner's number big on their team color with confetti, for 10 seconds. If that announcement arrives before the flag has been up for 15 seconds, it waits.
+3. **Podium (races).** The winner screen gives way to the podium: three blocks in the team colors of the top three, the winner tallest in the middle, with gold, silver and bronze places. It stays up until the next session. If no winner is ever announced, the podium appears 45 seconds after the flag.
 
-**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
+If you connect after the finish, there is nothing to build up to and you go straight to the podium.
+
+**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2, and only once the chequered flag has been up for 15 seconds. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
 
 ### Sessions, scrubbing and replays
 

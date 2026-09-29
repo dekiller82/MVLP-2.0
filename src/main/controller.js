@@ -39,8 +39,14 @@ const OVERLAY_DURATIONS_MS = { fastest: 2000 };
 // How long the startup animation is left on before the normal display takes over.
 const STARTUP_HOLD_MS = 2200;
 
-// How long the winner celebration is shown before the podium (or the chequered flag) takes over.
-const WINNER_HOLD_MS = 10000;
+// Pacing of the end of a race or of the last qualifying segment. In a replay (and often live)
+// the result is known the moment the flag falls, so without this the podium would replace the
+// chequered flag almost at once.
+const DEFAULT_FINISH_TIMINGS = {
+  chequeredMinMs: 15000, // the chequered flag stays up at least this long before anything replaces it
+  podiumWaitForWinnerMs: 45000, // the podium waits this long after the flag for the winner announcement
+  winnerHoldMs: 10000, // the winner celebration
+};
 
 // The panel runs a countdown animation for at most this long (the last minute
 // plus a little); before that it holds a still frame that is replaced each minute.
@@ -77,7 +83,13 @@ class AppController extends EventEmitter {
     this.gridWalk = null; // { drivers, sig } while the grid is being walked before a race
     this.result = null; // { kind: 'podium' | 'pole', drivers } once a session's result is known
     this.winner = null; // the race winner, while their celebration is showing
-    this.winnerTimer = null;
+    this.winnerTimer = null; // the celebration is on screen
+    this.winnerStartTimer = null; // the celebration is waiting for the chequered flag to have been up long enough
+    this.winnerDone = false;
+    this.resultTimer = null; // the podium or pole screen is waiting its turn
+    this.resultVisible = false; // the podium or pole screen has taken over from the chequered flag
+    this.chequeredShownAt = null; // when the chequered flag went up
+    this.timings = { ...DEFAULT_FINISH_TIMINGS };
     this.preSession = null; // { state, receivedAt, planKey } while a practice/quali start is pending
     this.countdownRate = new Map(); // per panel: measured transfer speed in bytes per ms
     this.countdownTimer = null; // next scheduled (re)send of the countdown
@@ -108,7 +120,10 @@ class AppController extends EventEmitter {
     this.mv.on('pre-session', (state) => this._onPreSession(state));
     this.mv.on('grid', (grid) => this._onGrid(grid));
     this.mv.on('result', (result) => this._onResult(result));
-    this.mv.on('chequered-cleared', () => { if (this.currentMvAction === 'chequered') this.currentMvAction = null; });
+    this.mv.on('chequered-cleared', () => {
+      if (this.currentMvAction === 'chequered') this.currentMvAction = null;
+      this._resetFinish();
+    });
     this.mv.on('yellow-sectors', (sectors, doubles) => this._onYellowSectors(sectors, doubles));
     this.mv.on('sector-map', () => this.refreshYellowDisplay());
     this.mv.on('circuit', () => this.refreshYellowDisplay());
@@ -180,7 +195,7 @@ class AppController extends EventEmitter {
     if (this.gridWalk) return this.gridWalk.sig ? `gridwalk-${this.gridWalk.sig}` : null; // null while its order is still being read
     const action = this.currentMvAction;
     // Once the chequered flag has fallen, the result (podium or pole) replaces it when known.
-    if (action === 'chequered' && this.result) return `result-${this.result.kind}`;
+    if (action === 'chequered' && this.result && this.resultVisible) return `result-${this.result.kind}`;
     // A trailing "d" means a double yellow, which flashes twice as fast.
     if (action === 'yellow' && this.yellowSectors.length && this._yellowMapReady()) {
       const double = this.yellowSectors.some((n) => this.doubleSectors.has(n));
@@ -273,7 +288,7 @@ class AppController extends EventEmitter {
         holdMs = Math.ceil(order.length / 2) * 2500 + 1000;
         custom = (c) => makeGridWalkGif(order, c.width ?? 32, c.height ?? 32);
       } else if (kind === 'winner-demo') {
-        holdMs = WINNER_HOLD_MS;
+        holdMs = this.timings.winnerHoldMs;
         custom = (c) => makeWinnerGif(order[0], c.width ?? 32, c.height ?? 32);
       } else if (kind === 'podium-demo') {
         custom = (c) => makePodiumGif(order.slice(0, 3), c.width ?? 32, c.height ?? 32);
@@ -508,6 +523,11 @@ class AppController extends EventEmitter {
     this._beginDisplay();
     this._clearOverlay();
     this.currentMvAction = action;
+    if (action === 'chequered') {
+      this.chequeredShownAt = Date.now();
+      this.winnerDone = false;
+      this.resultVisible = false;
+    }
     this.emit('mv:action', action);
     await this._showBase();
   }
@@ -543,13 +563,39 @@ class AppController extends EventEmitter {
     this._sendGifPresetToAllConnected(`gridwalk-${grid.sig}`);
   }
 
-  _onResult({ kind, drivers }) {
+  /** Milliseconds until the chequered flag has been up for its minimum time. */
+  _flagDwellLeft() {
+    if (!this.chequeredShownAt) return 0;
+    return Math.max(0, this.chequeredShownAt + this.timings.chequeredMinMs - Date.now());
+  }
+
+  _clearFinishTimers() {
+    clearTimeout(this.winnerTimer);
+    clearTimeout(this.winnerStartTimer);
+    clearTimeout(this.resultTimer);
+    this.winnerTimer = null;
+    this.winnerStartTimer = null;
+    this.resultTimer = null;
+  }
+
+  _resetFinish() {
+    this._clearFinishTimers();
+    this.result = null;
+    this.winner = null;
+    this.winnerDone = false;
+    this.resultVisible = false;
+    this.chequeredShownAt = null;
+  }
+
+  /**
+   * The end of a race or of the last qualifying segment plays out in order, however
+   * early the data is known: the chequered flag first (for at least a while), then the
+   * winner celebration, then the podium (or pole), which stays up.
+   */
+  _onResult({ kind, drivers, initial }) {
     if (kind === null) {
       const had = this.result || this.winner;
-      this.result = null;
-      this.winner = null;
-      clearTimeout(this.winnerTimer);
-      this.winnerTimer = null;
+      this._resetFinish();
       if (had && this.currentMvAction === 'chequered') {
         this._beginDisplay();
         this._showBase();
@@ -558,25 +604,59 @@ class AppController extends EventEmitter {
     }
 
     if (kind === 'winner') {
-      this.winner = drivers[0];
-      const epoch = this._beginDisplay();
-      this._clearOverlay();
-      this.emit('mv:action', 'winner');
-      clearTimeout(this.winnerTimer);
-      this._sendGifPresetToAllConnected('result-winner');
-      this.winnerTimer = setTimeout(() => {
-        this.winnerTimer = null;
-        if (epoch !== this.displayEpoch) return;
-        this._beginDisplay();
-        this._showBase(); // the podium if it is known by now, otherwise the chequered flag
-      }, WINNER_HOLD_MS);
+      clearTimeout(this.winnerStartTimer);
+      this.winnerStartTimer = setTimeout(() => this._startWinner(drivers[0]), this._flagDwellLeft());
       return;
     }
 
-    // Podium or pole: the session is over and this stays up until the next one.
+    // Podium or pole: this stays up until the next session.
     this.result = { kind, drivers };
-    this.emit('mv:action', kind);
-    if (this.winnerTimer) return; // the winner is being celebrated; the podium follows it
+    this.resultVisible = false;
+    clearTimeout(this.resultTimer);
+    if (initial) {
+      // Connected after the finish: there is nothing to build up to.
+      this._revealResult();
+      return;
+    }
+    let wait = this._flagDwellLeft();
+    if (kind === 'podium' && !this.winnerDone && !this.winnerTimer && !this.winnerStartTimer) {
+      // The winner is announced a little after the flag; give that message a chance to arrive first.
+      const sinceFlag = this.chequeredShownAt ? Date.now() - this.chequeredShownAt : 0;
+      wait = Math.max(wait, this.timings.podiumWaitForWinnerMs - sinceFlag);
+    }
+    this.resultTimer = setTimeout(() => this._revealResult(), Math.max(0, wait));
+  }
+
+  _startWinner(driver) {
+    this.winnerStartTimer = null;
+    this.winner = driver;
+    const epoch = this._beginDisplay();
+    this._clearOverlay();
+    this.emit('mv:action', 'winner');
+    clearTimeout(this.winnerTimer);
+    this._sendGifPresetToAllConnected('result-winner');
+    this.winnerTimer = setTimeout(() => {
+      this.winnerTimer = null;
+      this.winnerDone = true;
+      if (this.result?.kind === 'podium') {
+        this.resultVisible = true; // known by now: it follows the celebration
+        clearTimeout(this.resultTimer); // its own waiting timer is no longer needed
+        this.resultTimer = null;
+      }
+      if (epoch !== this.displayEpoch) return;
+      this._beginDisplay();
+      this._showBase(); // the podium if it is due, otherwise the chequered flag
+    }, this.timings.winnerHoldMs);
+  }
+
+  /** Puts the podium or pole screen up in place of the chequered flag. */
+  _revealResult() {
+    this.resultTimer = null;
+    if (!this.result || this.resultVisible) return; // nothing to show, or already showing
+    // A winner celebration is coming or on screen; the podium follows it.
+    if (this.result.kind === 'podium' && (this.winnerStartTimer || this.winnerTimer)) return;
+    this.resultVisible = true;
+    this.emit('mv:action', this.result.kind);
     if (this.currentMvAction === 'chequered') {
       this._beginDisplay();
       this._showBase();
@@ -591,10 +671,7 @@ class AppController extends EventEmitter {
     this.yellowSectors = [];
     this.doubleSectors = new Set();
     this.gridWalk = null;
-    this.result = null;
-    this.winner = null;
-    clearTimeout(this.winnerTimer);
-    this.winnerTimer = null;
+    this._resetFinish();
     this.preSession = null;
     this.countdownAnimating = false;
     this._clearCountdownTimers();
@@ -669,10 +746,7 @@ class AppController extends EventEmitter {
       this.yellowSectors = [];
       this.doubleSectors = new Set();
       this.gridWalk = null;
-      this.result = null;
-      this.winner = null;
-      clearTimeout(this.winnerTimer);
-      this.winnerTimer = null;
+      this._resetFinish();
     }
   }
 

@@ -12,6 +12,7 @@ const GRID_TAIL_MS = 60 * 60000; // give up if the race is this late (avoids loo
 const GRID_POLL_MS = 15000;
 const RESULT_RETRY_MS = 2000;
 const RESULT_MAX_TRIES = 10;
+const FINISH_POLL_MS = 1000; // how often the timing data is read while a race is finishing
 const ACTION_MAP = { 1: 'green', 2: 'yellow', 4: 'sc', 5: 'red', 6: 'vsc', 7: 'vsc-ending' };
 
 /** Short stable string for a piece of text, used to tell one grid order from another. */
@@ -110,7 +111,13 @@ class MultiviewerPoller extends EventEmitter {
     this.gridSig = '';
     this.gridLoading = false;
     this.lastGridPoll = 0;
-    this.resultKind = null; // 'podium' | 'pole' | null: what result screen is currently due
+    this.resultKind = null; // 'podium' | 'pole' | null: what result screen is currently due (fallback path and pole)
+    this.finishFallback = false; // the timing data has no per-car "taken the chequered flag", so use the session status instead
+    this.finishLoading = false;
+    this.lastFinishPoll = 0;
+    this.winnerAnnounced = false;
+    this.podiumAnnounced = false;
+    this.finishInitial = false; // the flag was already down when this session was first read
     this.sessionType = '';
   }
 
@@ -445,6 +452,8 @@ class MultiviewerPoller extends EventEmitter {
 
   /** The winner, the moment Race Control says who took the flag first (a live event, not history). */
   async _announceWinner(number) {
+    if (this.winnerAnnounced) return;
+    this.winnerAnnounced = true;
     try {
       const drivers = await this.ensureDrivers();
       const driver = drivers?.get(number);
@@ -465,7 +474,7 @@ class MultiviewerPoller extends EventEmitter {
     const part = (state.SessionData?.Series || []).reduce((p, x) => (x.QualifyingPart > 0 ? x.QualifyingPart : p), 0);
 
     let kind = null;
-    if (over && info.Type === 'Race') kind = 'podium';
+    if (over && info.Type === 'Race' && this.finishFallback) kind = 'podium';
     else if (over && info.Type === 'Qualifying' && part === 3) kind = 'pole';
 
     if (kind === this.resultKind) return;
@@ -496,12 +505,71 @@ class MultiviewerPoller extends EventEmitter {
   }
 
   /**
+   * While a race is finishing, watch which cars have taken the chequered flag. Multiviewer
+   * marks each timing line with `TakenChequered`: the winner is the leader when they take
+   * it, and the podium is due once the top three all have. (Race Control does not name the
+   * winner in races, and the session status flips to Finished the moment the flag falls,
+   * long before the top three are home.) Without that field, fall back to the status.
+   */
+  _processRaceFinish(state) {
+    if (state.SessionInfo?.Type !== 'Race' || !this.chequered || this.finishFallback || this.podiumAnnounced) return;
+    if (this.finishLoading || Date.now() - this.lastFinishPoll < FINISH_POLL_MS) return;
+    this.lastFinishPoll = Date.now();
+    this._pollFinish();
+  }
+
+  async _pollFinish() {
+    this.finishLoading = true;
+    try {
+      const drivers = await this.ensureDrivers();
+      const timing = await this._fetchState('TimingData');
+      if (!this.chequered) return; // scrubbed back before the flag while this was loading
+      const lines = Object.values(timing?.TimingData?.Lines || {});
+      if (!lines.length || !drivers) return;
+      if (!lines.some((l) => typeof l.MVStatus?.TakenChequered === 'boolean')) {
+        this.finishFallback = true;
+        logger.info('Multiviewer', 'No per-car chequered flag in the timing data; using the session status for the podium.');
+        return;
+      }
+
+      const ordered = lines
+        .filter((l) => Number.isFinite(Number(l.Position)) && drivers.has(String(l.RacingNumber)))
+        .sort((a, b) => Number(a.Position) - Number(b.Position));
+      const driverAt = (l, i) => ({ ...drivers.get(String(l.RacingNumber)), position: i + 1 });
+      const taken = (l) => Boolean(l?.MVStatus?.TakenChequered);
+
+      if (!this.winnerAnnounced && taken(ordered[0])) {
+        this.winnerAnnounced = true;
+        logger.info('Multiviewer', `Winner: ${drivers.get(String(ordered[0].RacingNumber)).tla}.`);
+        if (!this.finishInitial) this.emit('result', { kind: 'winner', drivers: [driverAt(ordered[0], 0)] });
+      }
+      const top3 = ordered.slice(0, 3);
+      if (top3.length === 3 && top3.every(taken)) {
+        this.winnerAnnounced = true;
+        this.podiumAnnounced = true;
+        const podium = top3.map(driverAt);
+        logger.info('Multiviewer', `Podium: ${podium.map((d) => d.tla).join(', ')}.`);
+        this.emit('result', { kind: 'podium', drivers: podium, initial: this.finishInitial });
+      }
+    } catch (err) {
+      logger.warn('Multiviewer', `Could not read the finish: ${err.message}`);
+    } finally {
+      this.finishLoading = false;
+    }
+  }
+
+  /**
    * Forgets the grid and result state. `silent` skips the "it is over" events, for a session
    * change: the controller resets everything itself on that signal, and hearing "the result
    * is gone" first would make it briefly show the old session's chequered flag again.
    */
   _clearRaceScreens({ silent = false } = {}) {
     this.gridWanted = false;
+    const announced = this.winnerAnnounced || this.podiumAnnounced;
+    this.winnerAnnounced = false;
+    this.podiumAnnounced = false;
+    this.finishFallback = false;
+    this.finishInitial = false;
     if (silent) {
       this.gridActive = false;
       this.gridSig = '';
@@ -509,7 +577,7 @@ class MultiviewerPoller extends EventEmitter {
       return;
     }
     this._endGrid();
-    if (this.resultKind !== null) {
+    if (this.resultKind !== null || announced) {
       this.resultKind = null;
       this.emit('result', { kind: null });
     }
@@ -641,6 +709,10 @@ class MultiviewerPoller extends EventEmitter {
       this.chequered = false;
       this.lastStatus = null; // so the current track status is announced again
       logger.info('Multiviewer', 'Chequered flag cleared (session running again).');
+      this.winnerAnnounced = false;
+      this.podiumAnnounced = false;
+      this.finishFallback = false;
+      this.finishInitial = false;
       this.emit('chequered-cleared');
     }
   }
@@ -648,6 +720,7 @@ class MultiviewerPoller extends EventEmitter {
   _setChequered() {
     if (this.chequered) return;
     this.chequered = true;
+    this.finishInitial = !this.seeded;
     logger.info('Multiviewer', 'Chequered flag.');
     this.emit('action', 'chequered');
   }
@@ -704,6 +777,7 @@ class MultiviewerPoller extends EventEmitter {
         this._processPreSession(liveTimingState, this._feedClock(data?.data?.f1LiveTimingClock, data?.data?.players), rcMessages);
         this._processChequered(rcMessages, liveTimingState.SessionData, liveTimingState.SessionStatus?.Status);
         this._processGrid(liveTimingState, this._feedClock(data?.data?.f1LiveTimingClock, data?.data?.players));
+        this._processRaceFinish(liveTimingState);
         this._processResults(liveTimingState);
         this.seeded = true;
         await this._pollFastestLap();

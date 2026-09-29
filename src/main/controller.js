@@ -43,9 +43,9 @@ const STARTUP_HOLD_MS = 2200;
 // the result is known the moment the flag falls, so without this the podium would replace the
 // chequered flag almost at once.
 const DEFAULT_FINISH_TIMINGS = {
-  chequeredMinMs: 15000, // the chequered flag stays up at least this long before anything replaces it
-  podiumWaitForWinnerMs: 45000, // the podium waits this long after the flag for the winner announcement
-  winnerHoldMs: 10000, // the winner celebration
+  chequeredMinMs: 5000, // the chequered flag stays up this long before the winner screen
+  winnerHoldMs: 10000, // the winner screen stays up at least this long
+  winnerWaitCapMs: 120000, // if the top three still have not finished after the hold, give up waiting on the winner screen
 };
 
 // The panel runs a countdown animation for at most this long (the last minute
@@ -87,6 +87,8 @@ class AppController extends EventEmitter {
     this.winnerStartTimer = null; // the celebration is waiting for the chequered flag to have been up long enough
     this.winnerDone = false;
     this.resultTimer = null; // the podium or pole screen is waiting its turn
+    this.winnerHeld = false; // the winner screen is staying up until the top three have finished
+    this.winnerCapTimer = null;
     this.resultVisible = false; // the podium or pole screen has taken over from the chequered flag
     this.chequeredShownAt = null; // when the chequered flag went up
     this.timings = { ...DEFAULT_FINISH_TIMINGS };
@@ -573,9 +575,12 @@ class AppController extends EventEmitter {
     clearTimeout(this.winnerTimer);
     clearTimeout(this.winnerStartTimer);
     clearTimeout(this.resultTimer);
+    clearTimeout(this.winnerCapTimer);
     this.winnerTimer = null;
     this.winnerStartTimer = null;
     this.resultTimer = null;
+    this.winnerCapTimer = null;
+    this.winnerHeld = false;
   }
 
   _resetFinish() {
@@ -613,18 +618,14 @@ class AppController extends EventEmitter {
     this.result = { kind, drivers };
     this.resultVisible = false;
     clearTimeout(this.resultTimer);
-    if (initial) {
-      // Connected after the finish: there is nothing to build up to.
+    if (initial || this.winnerHeld) {
+      // Connected after the finish, or the winner screen has been waiting for exactly this.
       this._revealResult();
       return;
     }
-    let wait = this._flagDwellLeft();
-    if (kind === 'podium' && !this.winnerDone && !this.winnerTimer && !this.winnerStartTimer) {
-      // The winner is announced a little after the flag; give that message a chance to arrive first.
-      const sinceFlag = this.chequeredShownAt ? Date.now() - this.chequeredShownAt : 0;
-      wait = Math.max(wait, this.timings.podiumWaitForWinnerMs - sinceFlag);
-    }
-    this.resultTimer = setTimeout(() => this._revealResult(), Math.max(0, wait));
+    // Otherwise after the chequered flag has had its time (a winner celebration that is
+    // pending or on screen goes first; _revealResult holds the podium back until it is over).
+    this.resultTimer = setTimeout(() => this._revealResult(), this._flagDwellLeft());
   }
 
   _startWinner(driver) {
@@ -639,9 +640,21 @@ class AppController extends EventEmitter {
       this.winnerTimer = null;
       this.winnerDone = true;
       if (this.result?.kind === 'podium') {
-        this.resultVisible = true; // known by now: it follows the celebration
+        this.resultVisible = true; // the top three are already home: the podium follows the celebration
         clearTimeout(this.resultTimer); // its own waiting timer is no longer needed
         this.resultTimer = null;
+      } else if (!this.result && epoch === this.displayEpoch) {
+        // The top three have not all finished yet: stay on the winner until they have.
+        this.winnerHeld = true;
+        this.winnerCapTimer = setTimeout(() => {
+          this.winnerCapTimer = null;
+          if (!this.winnerHeld) return;
+          this.winnerHeld = false;
+          if (epoch !== this.displayEpoch) return;
+          this._beginDisplay();
+          this._showBase(); // gave up waiting: back to the chequered flag
+        }, this.timings.winnerWaitCapMs);
+        return;
       }
       if (epoch !== this.displayEpoch) return;
       this._beginDisplay();
@@ -655,6 +668,9 @@ class AppController extends EventEmitter {
     if (!this.result || this.resultVisible) return; // nothing to show, or already showing
     // A winner celebration is coming or on screen; the podium follows it.
     if (this.result.kind === 'podium' && (this.winnerStartTimer || this.winnerTimer)) return;
+    this.winnerHeld = false;
+    clearTimeout(this.winnerCapTimer);
+    this.winnerCapTimer = null;
     this.resultVisible = true;
     this.emit('mv:action', this.result.kind);
     if (this.currentMvAction === 'chequered') {

@@ -220,13 +220,13 @@ These four screens draw drivers in their **team colors**, using the number and t
 
 **The end of a race plays out in order**, however early the result is known. In a replay the top three are already there the moment the flag falls, so the screens are paced instead of jumping straight to the result:
 
-1. **Chequered flag.** It stays up for at least 15 seconds.
-2. **Winner (races).** When Race Control announces which car took the flag first, the panel shows the winner's number big on their team color with confetti, for 10 seconds. If that announcement arrives before the flag has been up for 15 seconds, it waits.
-3. **Podium (races).** The winner screen gives way to the podium: three blocks in the team colors of the top three, the winner tallest in the middle, with gold, silver and bronze places. It stays up until the next session. If no winner is ever announced, the podium appears 45 seconds after the flag.
+1. **Chequered flag.** It stays up for 5 seconds.
+2. **Winner (races).** The winner's number appears big on their team color with confetti, for at least 10 seconds. The winner is the leader when they take the flag: Multiviewer marks every timing line with whether that car has taken the chequered flag.
+3. **Podium (races).** Once the **top three have all taken the flag**, the winner screen gives way to the podium: three blocks in the team colors of the top three, the winner tallest in the middle, with gold, silver and bronze places. If they finished during the 10 seconds, the podium follows straight after; if not, the winner screen simply stays up until they have. The podium stays up until the next session.
 
-If you connect after the finish, there is nothing to build up to and you go straight to the podium.
+If you connect after the finish, there is nothing to build up to and you go straight to the podium. If a session's timing data does not carry the per-car chequered flag, the podium is shown 5 seconds after the flag instead.
 
-**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2, and only once the chequered flag has been up for 15 seconds. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
+**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2, and only once the chequered flag has been up for 5 seconds. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
 
 ### Sessions, scrubbing and replays
 
@@ -428,7 +428,7 @@ Check the panel resolution on its Devices card, and try **Studio, Quick Send** w
 The map needs the circuit layout. It is fetched from Multiviewer's circuit API when a session is loaded, so you need an internet connection, and brand-new circuits are not in that dataset. The activity log says which of these it is (`No track layout is available for ...` or `Could not load the track layout ...`). The Test Effects button explains the same thing in a message.
 
 **The grid walkthrough, winner, podium or pole screen does not appear.**
-The grid walkthrough only runs for a race that has not started, from 45 minutes before its scheduled start. The winner appears when Race Control announces the first car to take the flag, the podium once the session status is finished, and pole only after Q3. All of them need Multiviewer's timing data for the session; the Test Effects buttons show each one on demand using the drivers of the loaded session.
+The grid walkthrough only runs for a race that has not started, from 45 minutes before its scheduled start. The winner appears 5 seconds after the chequered flag once the leader has taken it, the podium once the top three all have (and the winner screen has had its 10 seconds), and pole only after Q3. All of them need Multiviewer's timing data for the session; the Test Effects buttons show each one on demand using the drivers of the loaded session.
 
 **The countdown, flags or map are wrong right after I load a different session.**
 MVLP detects a session change by its session key and starts fresh. If it did not, please open an issue with the activity log lines around the switch.
@@ -447,6 +447,7 @@ That is expected: the mapping from marshal sectors to timing sectors is an estim
 - The countdown covers practice and qualifying, not races. Races get the grid walkthrough instead, because a race only starts when the lights go out and there is no reliable time to count to.
 - There are no start lights: the feed does not report the five lights coming on, and the random delay before they go out cannot be predicted, so the panel simply reacts when the race starts.
 - The podium and pole screens show the result as Multiviewer reports it at the finish. A penalty applied afterwards does not change what was already shown.
+- In races Race Control does not announce the winner, so the winner screen relies on Multiviewer's per-car "taken the chequered flag" marker in the timing data.
 - A panel shows one thing at a time. When several things could apply, the display logic picks one (see [Multiviewer integration](#multiviewer-integration)); there is no split screen.
 - Whether a particular panel firmware plays every GIF timing exactly (very short frames, very long holds) is not guaranteed. The generated effects avoid extreme timings on purpose.
 

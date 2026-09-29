@@ -226,7 +226,7 @@ These four screens draw drivers in their **team colors**, using the number and t
 
 If you connect after the finish, there is nothing to build up to and you go straight to the podium. If a session's timing data does not carry the per-car chequered flag, the podium is shown 5 seconds after the flag instead.
 
-**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2, and only once the chequered flag has been up for 5 seconds. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
+**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2. The session status changes to finished the instant the chequered flag falls, while cars on their final flying laps are still to cross the line, so pole waits until every car that is still on a timed lap has taken the flag (cars in the pits, on out-laps, knocked out, stopped or retired are not waited for, and a 100 second cap covers anything the data cannot place). It shows "POLE" and the driver's three-letter code on their team color, and stays up until the next session.
 
 ### Sessions, scrubbing and replays
 

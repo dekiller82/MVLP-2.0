@@ -13,6 +13,10 @@ const GRID_POLL_MS = 15000;
 const RESULT_RETRY_MS = 2000;
 const RESULT_MAX_TRIES = 10;
 const FINISH_POLL_MS = 1000; // how often the timing data is read while a race is finishing
+// Pole position: not before this long after the chequered flag, and at the latest after this long
+// (a lap cannot take longer, so every car on a timed lap has finished by then).
+const POLE_MIN_MS = 10000;
+const POLE_CAP_MS = 100000;
 const ACTION_MAP = { 1: 'green', 2: 'yellow', 4: 'sc', 5: 'red', 6: 'vsc', 7: 'vsc-ending' };
 
 /** Short stable string for a piece of text, used to tell one grid order from another. */
@@ -85,6 +89,7 @@ class MultiviewerPoller extends EventEmitter {
     this.circuitStatus = 'none'; // 'none' | 'ready' | 'unavailable' (not in the dataset) | 'error' (will retry)
     this.circuitRetryAt = 0;
     this.circuitLoading = false;
+    this.poleTimings = { minMs: POLE_MIN_MS, capMs: POLE_CAP_MS };
     this.drivers = null; // racing number -> { number, tla, name, team, color }
     this.driversLoading = null;
     this.sessionId = null; // which session the state belongs to, to notice a different one being loaded
@@ -118,6 +123,10 @@ class MultiviewerPoller extends EventEmitter {
     this.winnerAnnounced = false;
     this.podiumAnnounced = false;
     this.finishInitial = false; // the flag was already down when this session was first read
+    this.poleAnnounced = false;
+    this.poleLoading = false;
+    this.lastPolePoll = 0;
+    this.chequeredAt = 0;
     this.sessionType = '';
   }
 
@@ -469,13 +478,12 @@ class MultiviewerPoller extends EventEmitter {
    */
   _processResults(state) {
     const info = state.SessionInfo || {};
+    if (info.Type !== 'Race') return; // pole position is handled by _processQualiFinish
     const status = state.SessionStatus?.Status;
     const over = status === 'Finished' || status === 'Finalised' || status === 'Ends';
-    const part = (state.SessionData?.Series || []).reduce((p, x) => (x.QualifyingPart > 0 ? x.QualifyingPart : p), 0);
 
     let kind = null;
-    if (over && info.Type === 'Race' && this.finishFallback) kind = 'podium';
-    else if (over && info.Type === 'Qualifying' && part === 3) kind = 'pole';
+    if (over && this.finishFallback) kind = 'podium';
 
     if (kind === this.resultKind) return;
     this.resultKind = kind;
@@ -559,15 +567,65 @@ class MultiviewerPoller extends EventEmitter {
   }
 
   /**
+   * Pole position, after the last qualifying segment. The session status flips to Finished the
+   * instant the chequered flag falls, while cars on their final flying laps are still to cross
+   * the line, so the status cannot be used. Instead wait for every car that is still on a timed
+   * lap: on track (not in the pits, not on an out-lap, not knocked out, stopped or retired)
+   * and not yet having taken the flag. Cars cross the line and take it as their lap ends. A
+   * hard cap covers anything the data does not describe (an in-lap, say).
+   */
+  _processQualiFinish(state) {
+    const info = state.SessionInfo || {};
+    const part = (state.SessionData?.Series || []).reduce((p, x) => (x.QualifyingPart > 0 ? x.QualifyingPart : p), 0);
+    if (info.Type !== 'Qualifying' || part !== 3 || !this.chequered || this.poleAnnounced) return;
+    if (this.finishInitial) {
+      // Connected after the segment ended: nothing left to wait for.
+      this._announcePole(true);
+      return;
+    }
+    if (this.poleLoading || Date.now() - this.lastPolePoll < FINISH_POLL_MS) return;
+    this.lastPolePoll = Date.now();
+    this._pollQualiFinish();
+  }
+
+  async _pollQualiFinish() {
+    this.poleLoading = true;
+    try {
+      const timing = await this._fetchState('TimingData');
+      if (!this.chequered || this.poleAnnounced) return;
+      const lines = Object.values(timing?.TimingData?.Lines || {});
+      const elapsed = Date.now() - this.chequeredAt;
+      const hasStatus = lines.some((l) => l.MVStatus);
+      const waiting = lines.filter((l) => {
+        const mv = l.MVStatus || {};
+        return !mv.InPit && !mv.Outlap && !mv.KnockedOut && !mv.Stopped && !mv.Retired && !mv.TakenChequered;
+      });
+      const everyoneIn = hasStatus && waiting.length === 0 && elapsed >= this.poleTimings.minMs;
+      if (everyoneIn || elapsed >= this.poleTimings.capMs) this._announcePole(false);
+    } catch (err) {
+      logger.warn('Multiviewer', `Could not read the end of qualifying: ${err.message}`);
+    } finally {
+      this.poleLoading = false;
+    }
+  }
+
+  _announcePole(initial) {
+    this.poleAnnounced = true;
+    this.resultKind = 'pole';
+    this._loadResult('pole', 0, initial); // reads the top of the order now, so it is the final one
+  }
+
+  /**
    * Forgets the grid and result state. `silent` skips the "it is over" events, for a session
    * change: the controller resets everything itself on that signal, and hearing "the result
    * is gone" first would make it briefly show the old session's chequered flag again.
    */
   _clearRaceScreens({ silent = false } = {}) {
     this.gridWanted = false;
-    const announced = this.winnerAnnounced || this.podiumAnnounced;
+    const announced = this.winnerAnnounced || this.podiumAnnounced || this.poleAnnounced;
     this.winnerAnnounced = false;
     this.podiumAnnounced = false;
+    this.poleAnnounced = false;
     this.finishFallback = false;
     this.finishInitial = false;
     if (silent) {
@@ -711,6 +769,7 @@ class MultiviewerPoller extends EventEmitter {
       logger.info('Multiviewer', 'Chequered flag cleared (session running again).');
       this.winnerAnnounced = false;
       this.podiumAnnounced = false;
+      this.poleAnnounced = false;
       this.finishFallback = false;
       this.finishInitial = false;
       this.emit('chequered-cleared');
@@ -720,6 +779,7 @@ class MultiviewerPoller extends EventEmitter {
   _setChequered() {
     if (this.chequered) return;
     this.chequered = true;
+    this.chequeredAt = Date.now();
     this.finishInitial = !this.seeded;
     logger.info('Multiviewer', 'Chequered flag.');
     this.emit('action', 'chequered');
@@ -778,6 +838,7 @@ class MultiviewerPoller extends EventEmitter {
         this._processChequered(rcMessages, liveTimingState.SessionData, liveTimingState.SessionStatus?.Status);
         this._processGrid(liveTimingState, this._feedClock(data?.data?.f1LiveTimingClock, data?.data?.players));
         this._processRaceFinish(liveTimingState);
+        this._processQualiFinish(liveTimingState);
         this._processResults(liveTimingState);
         this.seeded = true;
         await this._pollFastestLap();

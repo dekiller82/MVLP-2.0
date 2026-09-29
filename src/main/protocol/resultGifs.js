@@ -95,6 +95,10 @@ function centeringGap(text, scale, regionWidth) {
     const w = textWidth(text, scale, gap);
     if (w + 2 <= regionWidth && (regionWidth - w) % 2 === 0) return gap;
   }
+  // No gap centres it exactly (e.g. three letters in an even width): at least make it fit.
+  for (const gap of candidates) {
+    if (gap >= 1 && textWidth(text, scale, gap) + 2 <= regionWidth) return gap;
+  }
   return natural;
 }
 
@@ -280,31 +284,25 @@ function makePodiumGif(top3, width, height) {
 
 // ---- pole position ----------------------------------------------------------------------------
 
-const POLE_PULSE_MS = 500;
-
-/** Pole position: the label and the driver's number on their team colour, with a slowly blinking border. */
+/** Pole position: the label and the driver's three-letter code, big, on their team colour. */
 function makePoleGif(driver, width, height) {
   const bg = hexToRgb(driver.color);
   const { fg, outline } = textStyleFor();
   const small = Math.max(1, Math.floor(height / 32));
-  const border = Math.max(1, small);
-  const frames = [];
-  for (const on of [true, false]) {
-    const c = newCanvas(width, height, bg);
-    const label = 'POLE';
-    const labelScale = fitScale(label, width, 2 * small);
-    drawCentered(c, label, labelScale, width / 2, Math.round(height * 0.1), fg, outline);
-    const zoneTop = Math.round(height * 0.46);
-    drawNumber(c, driver.number, width / 2, width, zoneTop, Math.round(height * 0.9) - zoneTop, fg, outline);
-    if (on) {
-      fillRect(c, 0, 0, width, border, fg);
-      fillRect(c, 0, height - border, width, border, fg);
-      fillRect(c, 0, 0, border, height, fg);
-      fillRect(c, width - border, 0, border, height, fg);
-    }
-    frames.push(frameOf(c, POLE_PULSE_MS));
-  }
-  return encode(width, height, frames);
+  const c = newCanvas(width, height, bg);
+
+  const label = 'POLE';
+  drawCentered(c, label, fitScale(label, width, 2 * small), width / 2, Math.round(height * 0.08), fg, outline);
+
+  // The code at the same letter height as the numbers on the other screens (bigger letters
+  // fill up with their own outline and stop being legible), centred below the label.
+  const code = String(driver.tla || driver.number);
+  let scale = 2 * small;
+  while (scale > 1 && textWidth(code, scale, 1) + 2 > width) scale--;
+  const zoneTop = Math.round(height * 0.42);
+  const zoneHeight = Math.round(height * 0.97) - zoneTop;
+  drawCentered(c, code, scale, width / 2, zoneTop + Math.floor((zoneHeight - 5 * scale) / 2), fg, outline);
+  return encode(width, height, [frameOf(c, 100)]);
 }
 
 module.exports = { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif, hexToRgb };

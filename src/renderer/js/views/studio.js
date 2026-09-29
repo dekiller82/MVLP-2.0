@@ -117,7 +117,7 @@ const TEST_EFFECTS = [
   { kind: 'grid-demo', label: 'Grid walkthrough', hint: 'Two drivers at a time, front to back. Uses the loaded session.' },
   { kind: 'winner-demo', label: 'Race winner', hint: 'The leader on their team colour with confetti (10 seconds). Uses the loaded session.' },
   { kind: 'podium-demo', label: 'Podium', hint: 'The top three in their team colours. Uses the loaded session.' },
-  { kind: 'pole-demo', label: 'Pole position', hint: 'The leader with a blinking border. Uses the loaded session.' },
+  { kind: 'pole-demo', label: 'Pole position', hint: "POLE and the leader's three-letter code. Uses the loaded session." },
   { kind: 'startup', label: 'Startup animation', hint: 'What plays when a panel connects.' },
 ];
 

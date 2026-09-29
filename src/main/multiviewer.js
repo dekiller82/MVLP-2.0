@@ -6,7 +6,20 @@ const logger = require('./logger');
 const MV_URL = 'http://127.0.0.1:10101/api/graphql';
 const QUERY = { query: 'query { f1LiveTimingState { TrackStatus, SessionStatus, SessionInfo, SessionData, WeatherData, RaceControlMessages } f1LiveTimingClock { trackTime paused } players { type state { paused live currentTime interpolatedCurrentTime } driverData { tla } } }' };
 const CIRCUIT_API = 'https://api.multiviewer.app/api/v1/circuits';
+// Grid walkthrough: shown from this long before the scheduled start of a race, until the lights go out.
+const GRID_LEAD_MS = 45 * 60000;
+const GRID_TAIL_MS = 60 * 60000; // give up if the race is this late (avoids looping forever)
+const GRID_POLL_MS = 15000;
+const RESULT_RETRY_MS = 2000;
+const RESULT_MAX_TRIES = 10;
 const ACTION_MAP = { 1: 'green', 2: 'yellow', 4: 'sc', 5: 'red', 6: 'vsc', 7: 'vsc-ending' };
+
+/** Short stable string for a piece of text, used to tell one grid order from another. */
+function hashString(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
 
 /** "04:00:00" / "-05:00:00" -> milliseconds. */
 function parseGmtOffset(value) {
@@ -71,6 +84,8 @@ class MultiviewerPoller extends EventEmitter {
     this.circuitStatus = 'none'; // 'none' | 'ready' | 'unavailable' (not in the dataset) | 'error' (will retry)
     this.circuitRetryAt = 0;
     this.circuitLoading = false;
+    this.drivers = null; // racing number -> { number, tla, name, team, color }
+    this.driversLoading = null;
     this.sessionId = null; // which session the state belongs to, to notice a different one being loaded
     this.sectorMapKey = null;
     this._resetSessionState();
@@ -90,6 +105,13 @@ class MultiviewerPoller extends EventEmitter {
     this.preSessionActive = false;
     this.preSessionTarget = undefined; // undefined = not tracked yet, null = delayed with no time
     this.preSessionTotalMs = 0;
+    this.gridActive = false;
+    this.gridWanted = false;
+    this.gridSig = '';
+    this.gridLoading = false;
+    this.lastGridPoll = 0;
+    this.resultKind = null; // 'podium' | 'pole' | null: what result screen is currently due
+    this.sessionType = '';
   }
 
   start() {
@@ -107,6 +129,7 @@ class MultiviewerPoller extends EventEmitter {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);
     this._endPreSession();
+    this._clearRaceScreens();
     this.emit('status', 'disabled');
     logger.info('Multiviewer', 'Polling stopped.');
   }
@@ -131,6 +154,8 @@ class MultiviewerPoller extends EventEmitter {
       if (text.includes('SAFETY CAR IN THIS LAP')) this.emit('action', 'sc-ending');
       else if (text.includes('VIRTUAL SAFETY CAR ENDING')) this.emit('action', 'vsc-ending');
       if (msg.SubCategory === 'PitExit' && msg.Flag === 'CLOSED') this.emit('overlay', 'pitclosed');
+      const winner = /FIRST CAR TO TAKE THE FLAG - CAR (\d+)/.exec(text);
+      if (winner && this.sessionType === 'Race') this._announceWinner(winner[1]);
     }
     // Forget messages that are gone (scrubbed back past them) so they fire again when replayed.
     this.processedMessages = currentKeys;
@@ -309,6 +334,7 @@ class MultiviewerPoller extends EventEmitter {
   _onSessionChanged(from, to) {
     logger.info('Multiviewer', `Session changed (${from} -> ${to}); starting fresh.`);
     this._endPreSession();
+    this._clearRaceScreens();
     this._resetSessionState();
     this.lastStatus = null;
     this.processedMessages = new Set();
@@ -317,7 +343,165 @@ class MultiviewerPoller extends EventEmitter {
     this.circuitStatus = 'none';
     this.sectorMap = null;
     this.sectorMapKey = null;
+    this.drivers = null;
     this.emit('session-changed');
+  }
+
+  // ---- Driver screens: grid walkthrough, winner, podium, pole ------------------------
+
+  async _fetchState(fields) {
+    const res = await fetch(MV_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: `query { f1LiveTimingState { ${fields} } }` }),
+    });
+    return (await res.json())?.data?.f1LiveTimingState ?? null;
+  }
+
+  /** Drivers by racing number (code, name, team colour), loaded once per session. */
+  async ensureDrivers() {
+    if (this.drivers) return this.drivers;
+    if (this.driversLoading) return this.driversLoading;
+    this.driversLoading = (async () => {
+      const state = await this._fetchState('DriverList');
+      const map = new Map();
+      for (const d of Object.values(state?.DriverList || {})) {
+        const number = String(d.RacingNumber);
+        map.set(number, { number, tla: d.Tla || number, name: d.FullName || '', team: d.TeamName || '', color: d.TeamColour || '' });
+      }
+      if (map.size) this.drivers = map;
+      return this.drivers;
+    })().finally(() => { this.driversLoading = null; });
+    return this.driversLoading;
+  }
+
+  /** The current running order (or the grid, before a race) as an array of drivers with a `position`. */
+  async currentOrder() {
+    const drivers = await this.ensureDrivers();
+    if (!drivers) return [];
+    const timing = await this._fetchState('TimingData');
+    const lines = Object.values(timing?.TimingData?.Lines || {});
+    const ordered = lines
+      .map((l) => ({ number: String(l.RacingNumber), position: Number(l.Position), line: Number(l.Line) }))
+      .filter((l) => drivers.has(l.number))
+      .sort((a, b) => (Number.isFinite(a.position) && Number.isFinite(b.position) ? a.position - b.position : a.line - b.line));
+    return ordered.map((l, i) => ({ ...drivers.get(l.number), position: i + 1 }));
+  }
+
+  /**
+   * Before a race: walk the grid. Active from a while before the scheduled start
+   * until the lights go out (the session status leaves 'Inactive'). The running
+   * order is polled slowly, since TimingData is large.
+   */
+  _processGrid(state, clock) {
+    const info = state.SessionInfo || {};
+    const feedNow = Number(clock?.trackTime);
+    let wanted = false;
+    if (info.Type === 'Race' && state.SessionStatus?.Status === 'Inactive' && Number.isFinite(feedNow)) {
+      const scheduled = Date.parse(`${info.StartDate}Z`) - parseGmtOffset(info.GmtOffset);
+      wanted = feedNow >= scheduled - GRID_LEAD_MS && feedNow <= scheduled + GRID_TAIL_MS;
+    }
+    this.gridWanted = wanted;
+    if (!wanted) {
+      this._endGrid();
+      return;
+    }
+    if (!this.gridActive) {
+      // Take hold of the display straight away; the order arrives a moment later.
+      this.gridActive = true;
+      this.gridSig = '';
+      this.emit('grid', { active: true, pending: true });
+    }
+    if (!this.gridLoading && Date.now() - this.lastGridPoll >= GRID_POLL_MS) {
+      this.lastGridPoll = Date.now();
+      this._pollGrid();
+    }
+  }
+
+  async _pollGrid() {
+    this.gridLoading = true;
+    try {
+      const order = await this.currentOrder();
+      if (!this.gridWanted || order.length < 2) return;
+      const sig = hashString(order.map((d) => d.number).join(','));
+      if (this.gridActive && sig === this.gridSig) return;
+      this.gridActive = true;
+      this.gridSig = sig;
+      logger.info('Multiviewer', `Grid walkthrough: ${order.length} drivers.`);
+      this.emit('grid', { active: true, drivers: order, sig });
+    } catch (err) {
+      logger.warn('Multiviewer', `Could not read the grid: ${err.message}`);
+    } finally {
+      this.gridLoading = false;
+    }
+  }
+
+  _endGrid() {
+    if (!this.gridActive) return;
+    this.gridActive = false;
+    this.gridSig = '';
+    this.emit('grid', { active: false });
+  }
+
+  /** The winner, the moment Race Control says who took the flag first (a live event, not history). */
+  async _announceWinner(number) {
+    try {
+      const drivers = await this.ensureDrivers();
+      const driver = drivers?.get(number);
+      if (driver) this.emit('result', { kind: 'winner', drivers: [{ ...driver, position: 1 }] });
+    } catch (err) {
+      logger.warn('Multiviewer', `Could not announce the winner: ${err.message}`);
+    }
+  }
+
+  /**
+   * The podium (race) and pole position (last qualifying segment) are state: they are
+   * due once the session is over. Pole only after the end of Q3, never after Q1 or Q2.
+   */
+  _processResults(state) {
+    const info = state.SessionInfo || {};
+    const status = state.SessionStatus?.Status;
+    const over = status === 'Finished' || status === 'Finalised' || status === 'Ends';
+    const part = (state.SessionData?.Series || []).reduce((p, x) => (x.QualifyingPart > 0 ? x.QualifyingPart : p), 0);
+
+    let kind = null;
+    if (over && info.Type === 'Race') kind = 'podium';
+    else if (over && info.Type === 'Qualifying' && part === 3) kind = 'pole';
+
+    if (kind === this.resultKind) return;
+    this.resultKind = kind;
+    if (kind === null) this.emit('result', { kind: null });
+    else this._loadResult(kind, 0);
+  }
+
+  /** Reads the top three (with retries while the feed still withholds them) and announces the result. */
+  async _loadResult(kind, attempt) {
+    try {
+      const state = await this._fetchState('TopThree');
+      const top = state?.TopThree;
+      const lines = top && !top.Withheld ? top.Lines || [] : [];
+      if (this.resultKind !== kind) return; // no longer due (scrubbed back, or session changed)
+      if (!lines.length) {
+        if (attempt < RESULT_MAX_TRIES) setTimeout(() => this._loadResult(kind, attempt + 1), RESULT_RETRY_MS);
+        return;
+      }
+      const drivers = lines.slice(0, kind === 'podium' ? 3 : 1).map((l, i) => ({
+        number: String(l.RacingNumber), tla: l.Tla, name: l.FullName || '', team: l.Team || '', color: l.TeamColour || '', position: i + 1,
+      }));
+      logger.info('Multiviewer', `${kind === 'podium' ? 'Podium' : 'Pole position'}: ${drivers.map((d) => d.tla).join(', ')}.`);
+      this.emit('result', { kind, drivers });
+    } catch (err) {
+      logger.warn('Multiviewer', `Could not read the result: ${err.message}`);
+    }
+  }
+
+  _clearRaceScreens() {
+    this.gridWanted = false;
+    this._endGrid();
+    if (this.resultKind !== null) {
+      this.resultKind = null;
+      this.emit('result', { kind: null });
+    }
   }
 
   _endPreSession() {
@@ -484,6 +668,7 @@ class MultiviewerPoller extends EventEmitter {
         }
         this.lastStatus = null;
         this._endPreSession();
+        this._clearRaceScreens();
         this._resetSessionState();
         delay = 500;
       } else {
@@ -495,6 +680,7 @@ class MultiviewerPoller extends EventEmitter {
 
         const rcMessages = liveTimingState.RaceControlMessages?.Messages || [];
         const info = liveTimingState.SessionInfo || {};
+        this.sessionType = String(info.Type || '');
         const sessionId = `${info.Meeting?.Key ?? ''}/${info.Key ?? ''}`;
         if (this.sessionId !== null && sessionId !== this.sessionId) this._onSessionChanged(this.sessionId, sessionId);
         this.sessionId = sessionId;
@@ -506,6 +692,8 @@ class MultiviewerPoller extends EventEmitter {
         this._processWeather(liveTimingState.WeatherData);
         this._processPreSession(liveTimingState, this._feedClock(data?.data?.f1LiveTimingClock, data?.data?.players), rcMessages);
         this._processChequered(rcMessages, liveTimingState.SessionData, liveTimingState.SessionStatus?.Status);
+        this._processGrid(liveTimingState, this._feedClock(data?.data?.f1LiveTimingClock, data?.data?.players));
+        this._processResults(liveTimingState);
         this.seeded = true;
         await this._pollFastestLap();
 

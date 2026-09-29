@@ -11,6 +11,7 @@ const FLAG_LABELS = {
   chequered: 'Chequered Flag', pitclosed: 'Pit Exit Closed', rain: 'Rain',
   'sc-ending': 'Safety Car In This Lap', 'vsc-ending': 'VSC Ending', fastest: 'Fastest Lap',
   countdown: 'Session Starting', delayed: 'Start Delayed',
+  grid: 'Grid Walk', winner: 'Race Winner', podium: 'Podium', pole: 'Pole Position',
 };
 
 let mounted = false;

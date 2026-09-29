@@ -2,23 +2,7 @@
 
 const { GifWriter } = require('omggif');
 
-// 3x5 pixel glyphs, one string per row ('#' = pixel set).
-const GLYPHS = {
-  0: ['###', '#.#', '#.#', '#.#', '###'],
-  1: ['.#.', '##.', '.#.', '.#.', '###'],
-  2: ['###', '..#', '###', '#..', '###'],
-  3: ['###', '..#', '###', '..#', '###'],
-  4: ['#.#', '#.#', '###', '..#', '..#'],
-  5: ['###', '#..', '###', '..#', '###'],
-  6: ['###', '#..', '###', '#.#', '###'],
-  7: ['###', '..#', '.#.', '.#.', '.#.'],
-  8: ['###', '#.#', '###', '#.#', '###'],
-  9: ['###', '#.#', '###', '..#', '###'],
-  H: ['#.#', '#.#', '###', '#.#', '#.#'],
-  P: ['###', '#.#', '###', '#..', '#..'],
-  Q: ['###', '#.#', '#.#', '###', '..#'],
-  S: ['###', '#..', '###', '..#', '###'],
-};
+const { GLYPHS, textUnits, fitScale } = require('./font');
 
 // Palette indices.
 const BLACK = 0;
@@ -28,15 +12,6 @@ const GREEN = 3;
 const TRACK = 4;
 const LABEL = 5;
 const PALETTE = [0x000000, 0xffffff, 0xffa000, 0x00c800, 0x303030, 0x40a0ff, 0x000000, 0x000000];
-
-function textUnits(text) {
-  return text.length * 3 + (text.length - 1); // one column gap between glyphs
-}
-
-/** Largest integer scale (<= maxScale) at which `text` fits in `width`. */
-function fitScale(text, width, maxScale) {
-  return Math.max(1, Math.min(maxScale, Math.floor((width - 2) / textUnits(text))));
-}
 
 function drawText(px, width, text, scale, top, color) {
   const left = Math.floor((width - textUnits(text) * scale) / 2);

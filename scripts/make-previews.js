@@ -20,6 +20,7 @@ const { makeSectorYellowGif } = require('../src/main/protocol/sectorGif');
 const { makeYellowMap } = require('../src/main/protocol/trackMapGif');
 const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('../src/main/protocol/effectGifs');
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('../src/main/protocol/countdownGif');
+const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('../src/main/protocol/resultGifs');
 
 const OUT = path.join(__dirname, '..', 'docs', 'previews');
 const GIFS = path.join(__dirname, '..', 'assets', 'gifs');
@@ -28,6 +29,33 @@ const SCALE = 4; // 32 px panel -> 128 px preview
 const MAX_HOLD_MS = 1200; // long holds are shortened so the previews loop nicely
 
 const CIRCUIT_API = 'https://api.multiviewer.app/api/v1/circuits';
+
+// A sample running order (number, code and team colour, as Multiviewer reports them), so
+// the driver screens can be previewed without a session loaded.
+const SAMPLE_GRID = [
+  { number: '63', tla: 'RUS', color: '00D7B6' },
+  { number: '81', tla: 'PIA', color: 'F47600' },
+  { number: '44', tla: 'HAM', color: 'ED1131' },
+  { number: '1', tla: 'NOR', color: 'F47600' },
+  { number: '12', tla: 'ANT', color: '00D7B6' },
+  { number: '10', tla: 'GAS', color: '00A1E8' },
+  { number: '3', tla: 'VER', color: '4781D7' },
+  { number: '41', tla: 'LIN', color: '6C98FF' },
+  { number: '22', tla: 'TSU', color: '6C98FF' },
+  { number: '43', tla: 'COL', color: '00A1E8' },
+  { number: '5', tla: 'BOR', color: 'F50537' },
+  { number: '87', tla: 'BEA', color: '9C9FA2' },
+  { number: '23', tla: 'ALB', color: '1868DB' },
+  { number: '27', tla: 'HUL', color: 'F50537' },
+  { number: '55', tla: 'SAI', color: '1868DB' },
+  { number: '31', tla: 'OCO', color: '9C9FA2' },
+  { number: '30', tla: 'LAW', color: '4781D7' },
+  { number: '11', tla: 'PER', color: '909090' },
+  { number: '77', tla: 'BOT', color: '909090' },
+  { number: '18', tla: 'STR', color: '229971' },
+  { number: '14', tla: 'ALO', color: '229971' },
+  { number: '16', tla: 'LEC', color: 'ED1131' },
+].map((d, i) => ({ ...d, position: i + 1 }));
 
 function upscale(rgba, size, scale) {
   const big = size * scale;
@@ -121,6 +149,14 @@ async function loadCircuit(key) {
 
   // Startup animation.
   saveAnimation('startup', await makeStartupGif(path.join(GIFS, 'mv.gif'), PANEL, PANEL));
+
+  // Driver screens: the grid walkthrough, winner, podium and pole position.
+  saveAnimation('grid-walk', makeGridWalkGif(SAMPLE_GRID.slice(0, 8), PANEL, PANEL));
+  const gridFrames = image.decodeGifToRgbaFrames(makeGridWalkGif(SAMPLE_GRID, PANEL, PANEL)).frames;
+  await saveSheet('grid-screens', gridFrames.filter((_, i) => i % 4 === 0).map((f) => f.data), 6);
+  saveAnimation('winner', makeWinnerGif(SAMPLE_GRID[0], PANEL, PANEL));
+  saveAnimation('pole', makePoleGif(SAMPLE_GRID[0], PANEL, PANEL));
+  await saveSheet('podium', [firstFrame(makePodiumGif(SAMPLE_GRID.slice(0, 3), PANEL, PANEL))], 1);
 
   console.log('Done.');
 })().catch((err) => {

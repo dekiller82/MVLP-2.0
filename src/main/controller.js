@@ -12,6 +12,7 @@ const { makeSectorYellowGif } = require('./protocol/sectorGif');
 const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('./protocol/effectGifs');
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('./protocol/countdownGif');
 const { makeYellowMap } = require('./protocol/trackMapGif');
+const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('./protocol/resultGifs');
 const { MultiviewerPoller } = require('./multiviewer');
 const { SpotifyManager } = require('./spotify');
 
@@ -37,6 +38,9 @@ const OVERLAY_DURATIONS_MS = { fastest: 2000 };
 
 // How long the startup animation is left on before the normal display takes over.
 const STARTUP_HOLD_MS = 2200;
+
+// How long the winner celebration is shown before the podium (or the chequered flag) takes over.
+const WINNER_HOLD_MS = 10000;
 
 // The panel runs a countdown animation for at most this long (the last minute
 // plus a little); before that it holds a still frame that is replaced each minute.
@@ -70,6 +74,10 @@ class AppController extends EventEmitter {
     // newer one is made, so a slow send (a big animation) can't overwrite a newer display.
     this.displayEpoch = 0;
     this.testTimer = null; // restores the real display after a test effect
+    this.gridWalk = null; // { drivers, sig } while the grid is being walked before a race
+    this.result = null; // { kind: 'podium' | 'pole', drivers } once a session's result is known
+    this.winner = null; // the race winner, while their celebration is showing
+    this.winnerTimer = null;
     this.preSession = null; // { state, receivedAt, planKey } while a practice/quali start is pending
     this.countdownRate = new Map(); // per panel: measured transfer speed in bytes per ms
     this.countdownTimer = null; // next scheduled (re)send of the countdown
@@ -98,6 +106,8 @@ class AppController extends EventEmitter {
     this.mv.on('action', (action) => this._onMultiviewerAction(action));
     this.mv.on('overlay', (name) => this._onOverlay(name));
     this.mv.on('pre-session', (state) => this._onPreSession(state));
+    this.mv.on('grid', (grid) => this._onGrid(grid));
+    this.mv.on('result', (result) => this._onResult(result));
     this.mv.on('chequered-cleared', () => { if (this.currentMvAction === 'chequered') this.currentMvAction = null; });
     this.mv.on('yellow-sectors', (sectors, doubles) => this._onYellowSectors(sectors, doubles));
     this.mv.on('sector-map', () => this.refreshYellowDisplay());
@@ -167,7 +177,10 @@ class AppController extends EventEmitter {
 
   /** Gif to show for the current track status (yellow shows the sector number when known). */
   _baseGifName() {
+    if (this.gridWalk) return this.gridWalk.sig ? `gridwalk-${this.gridWalk.sig}` : null; // null while its order is still being read
     const action = this.currentMvAction;
+    // Once the chequered flag has fallen, the result (podium or pole) replaces it when known.
+    if (action === 'chequered' && this.result) return `result-${this.result.kind}`;
     // A trailing "d" means a double yellow, which flashes twice as fast.
     if (action === 'yellow' && this.yellowSectors.length && this._yellowMapReady()) {
       const double = this.yellowSectors.some((n) => this.doubleSectors.has(n));
@@ -194,9 +207,14 @@ class AppController extends EventEmitter {
     return Object.keys(this.mv.sectorMap).map(Number).filter((n) => fullFlagged.has(this.mv.sectorMap[n])).sort((a, b) => a - b);
   }
 
-  async _showBase() {
+  /**
+   * @param opts.settled show the flag in its settled form (the still, or the map's
+   *   flashing loop) instead of replaying the attention-grabbing intro. Used when
+   *   going back to a display that hasn't changed, e.g. after an overlay.
+   */
+  async _showBase({ settled = false } = {}) {
     const gifName = this._baseGifName();
-    if (gifName) await this._sendGifPresetToAllConnected(gifName);
+    if (gifName) await this._sendGifPresetToAllConnected(gifName, { settled });
   }
 
   /** Short animation when a panel connects, so it's obvious the app has hold of it. */
@@ -247,6 +265,21 @@ class AppController extends EventEmitter {
     } else if (named[kind]) {
       holdMs = named[kind];
       await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, kind)));
+    } else if (['grid-demo', 'winner-demo', 'podium-demo', 'pole-demo'].includes(kind)) {
+      // Uses the drivers of whatever session is loaded in Multiviewer.
+      const order = await this.mv.currentOrder().catch(() => []);
+      if (order.length < 3) return -1;
+      if (kind === 'grid-demo') {
+        holdMs = Math.ceil(order.length / 2) * 2500 + 1000;
+        custom = (c) => makeGridWalkGif(order, c.width ?? 32, c.height ?? 32);
+      } else if (kind === 'winner-demo') {
+        holdMs = WINNER_HOLD_MS;
+        custom = (c) => makeWinnerGif(order[0], c.width ?? 32, c.height ?? 32);
+      } else if (kind === 'podium-demo') {
+        custom = (c) => makePodiumGif(order.slice(0, 3), c.width ?? 32, c.height ?? 32);
+      } else {
+        custom = (c) => makePoleGif(order[0], c.width ?? 32, c.height ?? 32);
+      }
     } else if (kind === 'delayed') {
       custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
     } else if (kind === 'countdown') {
@@ -278,10 +311,15 @@ class AppController extends EventEmitter {
   _restoreDisplay() {
     this._beginDisplay();
     if (this.preSession) this._pushCountdown();
-    else if (this._baseGifName()) this._showBase();
+    else if (this._baseGifName()) this._showBase({ settled: true });
     else if (this.spotifyEnabled && !this.mvLive && this.lastArt) {
       this.ble.getConnectedIds().forEach((id) => this._sendArtToDevice(id, this.lastArt));
     } else this._sendGifPresetToAllConnected('mv');
+  }
+
+  /** True while a screen owns the panels and flags or overlays should only be remembered, not shown. */
+  _pinned() {
+    return Boolean(this.preSession || this.gridWalk);
   }
 
   _beginDisplay() {
@@ -302,7 +340,7 @@ class AppController extends EventEmitter {
       // handled first; if it makes its own display decision this one is dropped.
       const epoch = this._beginDisplay();
       setTimeout(() => {
-        if (epoch !== this.displayEpoch || this.preSession) return;
+        if (epoch !== this.displayEpoch || this._pinned()) return;
         if (this._baseGifName()) this._showBase();
         else this._sendGifPresetToAllConnected('mv');
       }, 0);
@@ -466,12 +504,83 @@ class AppController extends EventEmitter {
     if (this.currentMvAction === 'chequered' && action !== 'chequered') return;
     // The same state can be signalled twice (e.g. a message and the status feed).
     if (action === this.currentMvAction && !this.overlayTimer) return;
-    if (this.preSession) { this.currentMvAction = action; return; } // shown once the session starts
+    if (this._pinned()) { this.currentMvAction = action; return; } // shown once the session starts
     this._beginDisplay();
     this._clearOverlay();
     this.currentMvAction = action;
     this.emit('mv:action', action);
     await this._showBase();
+  }
+
+  // ---- Grid walkthrough, winner, podium and pole ----------------------------------
+
+  _onGrid(grid) {
+    if (!grid.active) {
+      if (!this.gridWalk) return;
+      this.gridWalk = null;
+      // The lights are out: put the track status back, after any status change reported
+      // in the same poll has had its say.
+      const epoch = this._beginDisplay();
+      setTimeout(() => {
+        if (epoch !== this.displayEpoch || this._pinned()) return;
+        if (this._baseGifName()) this._showBase();
+        else this._sendGifPresetToAllConnected('mv');
+      }, 0);
+      return;
+    }
+    if (grid.pending) {
+      // The grid walk is about to start: hold the display now so nothing flashes up meanwhile.
+      if (!this.gridWalk) this.gridWalk = { drivers: null, sig: null };
+      return;
+    }
+    const first = !this.gridWalk?.sig;
+    const changed = first || this.gridWalk.sig !== grid.sig;
+    this.gridWalk = { drivers: grid.drivers, sig: grid.sig };
+    if (!changed) return;
+    this._clearOverlay();
+    this._beginDisplay();
+    if (first) this.emit('mv:action', 'grid');
+    this._sendGifPresetToAllConnected(`gridwalk-${grid.sig}`);
+  }
+
+  _onResult({ kind, drivers }) {
+    if (kind === null) {
+      const had = this.result || this.winner;
+      this.result = null;
+      this.winner = null;
+      clearTimeout(this.winnerTimer);
+      this.winnerTimer = null;
+      if (had && this.currentMvAction === 'chequered') {
+        this._beginDisplay();
+        this._showBase();
+      }
+      return;
+    }
+
+    if (kind === 'winner') {
+      this.winner = drivers[0];
+      const epoch = this._beginDisplay();
+      this._clearOverlay();
+      this.emit('mv:action', 'winner');
+      clearTimeout(this.winnerTimer);
+      this._sendGifPresetToAllConnected('result-winner');
+      this.winnerTimer = setTimeout(() => {
+        this.winnerTimer = null;
+        if (epoch !== this.displayEpoch) return;
+        this._beginDisplay();
+        this._showBase(); // the podium if it is known by now, otherwise the chequered flag
+      }, WINNER_HOLD_MS);
+      return;
+    }
+
+    // Podium or pole: the session is over and this stays up until the next one.
+    this.result = { kind, drivers };
+    this.emit('mv:action', kind);
+    if (this.winnerTimer) return; // the winner is being celebrated; the podium follows it
+    if (this.currentMvAction === 'chequered') {
+      this._beginDisplay();
+      this._showBase();
+    }
   }
 
   /** A different session was loaded: nothing about the old one's display carries over. */
@@ -481,6 +590,11 @@ class AppController extends EventEmitter {
     this.currentMvAction = null;
     this.yellowSectors = [];
     this.doubleSectors = new Set();
+    this.gridWalk = null;
+    this.result = null;
+    this.winner = null;
+    clearTimeout(this.winnerTimer);
+    this.winnerTimer = null;
     this.preSession = null;
     this.countdownAnimating = false;
     this._clearCountdownTimers();
@@ -490,7 +604,7 @@ class AppController extends EventEmitter {
     const before = this._baseGifName();
     this.yellowSectors = sectors;
     this.doubleSectors = doubles;
-    if (this.currentMvAction !== 'yellow' || this.overlayTimer || this.preSession) return;
+    if (this.currentMvAction !== 'yellow' || this.overlayTimer || this._pinned()) return;
     if (this._baseGifName() === before) return;
     this._beginDisplay();
     this._showBase();
@@ -498,14 +612,14 @@ class AppController extends EventEmitter {
 
   /** Re-renders the yellow display after the mini/full sector setting (or map) changed. */
   refreshYellowDisplay() {
-    if (this.currentMvAction !== 'yellow' || this.overlayTimer || this.preSession || !this.yellowSectors.length) return;
+    if (this.currentMvAction !== 'yellow' || this.overlayTimer || this._pinned() || !this.yellowSectors.length) return;
     this._beginDisplay();
     this._showBase();
   }
 
   /** Shows a gif for a fixed time, then goes back to the track status display. */
   async _onOverlay(name) {
-    if (this.currentMvAction === 'chequered' || this.preSession) return;
+    if (this.currentMvAction === 'chequered' || this._pinned()) return;
     this._beginDisplay();
     this._clearOverlay();
     this.emit('mv:action', name);
@@ -513,7 +627,7 @@ class AppController extends EventEmitter {
       this.overlayTimer = null;
       if (this.currentMvAction) this.emit('mv:action', this.currentMvAction);
       this._beginDisplay();
-      this._showBase();
+      this._showBase({ settled: true }); // the flag hasn't changed: no flashing intro
     }, OVERLAY_DURATIONS_MS[name] ?? OVERLAY_DURATION_MS);
     await this._sendGifPresetToAllConnected(name);
   }
@@ -554,6 +668,11 @@ class AppController extends EventEmitter {
       this.currentMvAction = null;
       this.yellowSectors = [];
       this.doubleSectors = new Set();
+      this.gridWalk = null;
+      this.result = null;
+      this.winner = null;
+      clearTimeout(this.winnerTimer);
+      this.winnerTimer = null;
     }
   }
 
@@ -599,9 +718,9 @@ class AppController extends EventEmitter {
 
   // ---- GIF presets ----------------------------------------------------------
 
-  async _sendGifPresetToAllConnected(gifName) {
+  async _sendGifPresetToAllConnected(gifName, opts) {
     if (!this.ble.getConnectedIds().length) logger.warn('Controller', `Not sending "${gifName}": no panel is connected.`);
-    await Promise.allSettled(this.ble.getConnectedIds().map((id) => this._sendGifPresetToDevice(id, gifName)));
+    await Promise.allSettled(this.ble.getConnectedIds().map((id) => this._sendGifPresetToDevice(id, gifName, opts)));
   }
 
   /** Bundled gifs by name, plus generated per-sector yellow flags ("yellow-<n>"). */
@@ -616,6 +735,10 @@ class AppController extends EventEmitter {
       this.loopCache.set(`${gifName}:${width}x${height}`, loop); // what takes over once the intro flashes are done
       return gif;
     }
+    if (gifName.startsWith('gridwalk-')) return this.gridWalk ? makeGridWalkGif(this.gridWalk.drivers, width, height) : null;
+    if (gifName === 'result-winner') return this.winner ? makeWinnerGif(this.winner, width, height) : null;
+    if (gifName === 'result-podium') return this.result?.kind === 'podium' ? makePodiumGif(this.result.drivers, width, height) : null;
+    if (gifName === 'result-pole') return this.result?.kind === 'pole' ? makePoleGif(this.result.drivers[0], width, height) : null;
     if (gifName === 'fastest') return makeFastestLapGif(width, height);
     if (gifName === 'startup') return makeStartupGif(path.join(GIFS_DIR, 'mv.gif'), width, height);
     if (gifName === 'sc-ending' || gifName === 'vsc-ending') {
@@ -631,7 +754,7 @@ class AppController extends EventEmitter {
     return fs.readFileSync(filePath);
   }
 
-  async _sendGifPresetToDevice(id, gifName) {
+  async _sendGifPresetToDevice(id, gifName, { settled = false } = {}) {
     const epoch = this.displayEpoch;
     const config = store.getDevice(id) || {};
     const buffer = await this._gifBufferFor(gifName, config);
@@ -641,7 +764,24 @@ class AppController extends EventEmitter {
     }
     // Generated gifs are already exactly panel-sized; resizing them again
     // (even to the same size) shifts them and loses the last row and column.
-    const generated = /^(yellow-\d+d?|yellowmap-[\d.]+d?|fastest|sc-ending|vsc-ending|startup)$/.test(gifName);
+    const generated = /^(yellow-\d+d?|yellowmap-[\d.]+d?|gridwalk-[a-z0-9]+|result-(winner|podium|pole)|fastest|sc-ending|vsc-ending|startup)$/.test(gifName);
+
+    if (settled) {
+      // Skip the flashing that announces a change: go straight to how it settles.
+      const loop = this.loopCache.get(`${gifName}:${config.width ?? 32}x${config.height ?? 32}`);
+      const stillable = STOPPABLE_GIFS.has(gifName) || gifName.startsWith('yellow-');
+      if (loop || stillable) {
+        const timer = this.gifStopTimers.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          this.gifStopTimers.delete(id);
+        }
+        logger.info('Controller', `Sending "${gifName}" (settled) to ${id}.`);
+        if (loop) await this._switchToLoop(id, loop, epoch);
+        else await this._freezeFirstFrame(id, buffer, generated, epoch);
+        return;
+      }
+    }
     await this._sendGifBuffer(id, gifName, buffer, generated, epoch);
   }
 
@@ -678,7 +818,7 @@ class AppController extends EventEmitter {
         // line keeps flashing on its own rather than settling on a still.
         const loop = this.loopCache.get(`${gifName}:${config.width ?? 32}x${config.height ?? 32}`);
         if (loop) this._switchToLoop(id, loop, epoch);
-        else this._freezeFirstFrame(id, buffer, generated);
+        else this._freezeFirstFrame(id, buffer, generated, epoch);
       }, FIRST_FRAME_FREEZE_DELAY_MS);
       this.gifStopTimers.set(id, t);
     }
@@ -704,7 +844,7 @@ class AppController extends EventEmitter {
     }
   }
 
-  async _freezeFirstFrame(id, gifBuffer, generated = false) {
+  async _freezeFirstFrame(id, gifBuffer, generated = false, epoch = this.displayEpoch) {
     if (!this.ble.isConnected(id)) return;
     const config = store.getDevice(id) || {};
     try {
@@ -723,6 +863,7 @@ class AppController extends EventEmitter {
         anchor: config.anchor ?? 0x33,
         autoResize: false,
       });
+      if (epoch !== this.displayEpoch) return; // something newer was decided while this was being prepared
       await this.ble.writeToDevice(id, payloads);
     } catch (err) {
       logger.warn('Controller', `First-frame freeze failed for ${id}: ${err.message}`);

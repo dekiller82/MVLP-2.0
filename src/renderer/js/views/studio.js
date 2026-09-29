@@ -114,6 +114,10 @@ const TEST_EFFECTS = [
   { kind: 'chequered', label: 'Chequered flag', hint: 'Shown for 10 seconds.' },
   { kind: 'countdown', label: 'Session countdown', hint: 'Q1 countdown that runs by itself. Seconds to start.', input: { value: 30, min: 5, max: 600, title: 'Seconds until the start' } },
   { kind: 'delayed', label: 'Start delayed', hint: 'The hourglass shown when a start is delayed.' },
+  { kind: 'grid-demo', label: 'Grid walkthrough', hint: 'Two drivers at a time, front to back. Uses the loaded session.' },
+  { kind: 'winner-demo', label: 'Race winner', hint: 'The leader on their team colour with confetti (10 seconds). Uses the loaded session.' },
+  { kind: 'podium-demo', label: 'Podium', hint: 'The top three in their team colours. Uses the loaded session.' },
+  { kind: 'pole-demo', label: 'Pole position', hint: 'The leader with a blinking border. Uses the loaded session.' },
   { kind: 'startup', label: 'Startup animation', hint: 'What plays when a panel connects.' },
 ];
 
@@ -122,7 +126,7 @@ async function runTestEffect(section, kind) {
   const input = section.querySelector(`[data-input="${kind}"]`);
   const arg = input ? (input.type === 'number' ? Number(input.value) : input.value) : undefined;
   const sent = await window.mvlp.invoke('test:effect', kind, arg, target === '__all__' ? undefined : target);
-  if (sent === -1) showToast('Load a session in Multiviewer first: the track layout comes from there.', 'warning', 4000);
+  if (sent === -1) showToast('Load a session in Multiviewer first: this effect uses its data (track layout or drivers).', 'warning', 4000);
   else if (sent === -2) showToast('Multiviewer has no track layout for this circuit (new circuits are missing), so there is no map.', 'warning', 5000);
   else if (sent === -3) showToast('The track layout has not loaded yet. Check your internet connection and try again in a moment.', 'warning', 4000);
   else if (sent) showToast(`Showing on ${sent} panel${sent === 1 ? '' : 's'}.`, 'success', 1500);

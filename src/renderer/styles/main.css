@@ -157,6 +157,9 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .flag-swatch.fastest { background: #2d1442; color: #d08cff; box-shadow: 0 0 24px rgba(177,56,221,.35); }
 .flag-swatch.countdown { background: #10304a; color: #7ec2ff; box-shadow: 0 0 24px rgba(64,160,255,.25); }
 .flag-swatch.delayed { background: #453c0d; color: #ffb84d; box-shadow: 0 0 24px rgba(255,160,0,.25); }
+.flag-swatch.grid { background: #10304a; color: #7ec2ff; box-shadow: 0 0 24px rgba(64,160,255,.25); }
+.flag-swatch.winner, .flag-swatch.podium { background: #3a2f0d; color: #ffd700; box-shadow: 0 0 24px rgba(255,215,0,.3); }
+.flag-swatch.pole { background: #10303a; color: #7ee8ff; box-shadow: 0 0 24px rgba(0,220,255,.25); }
 .flag-name { font-size: 18px; font-weight: 700; }
 .flag-sub { font-size: 12px; color: var(--text-dim); }
 

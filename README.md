@@ -42,6 +42,7 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 - "Safety Car in this lap" and "VSC ending" reuse the SC and VSC artwork with a pulsing green border.
 - Short overlays for events: pit exit closed, rain starting, and a new overall fastest lap.
 - A **countdown** before practice and qualifying sessions, including delayed starts and the gaps between qualifying segments.
+- A **grid walkthrough** before a race (two drivers at a time, front to back), then a **winner** celebration, the **podium**, and **pole position** after qualifying, all in team colors.
 - Handles scrubbing, pausing and re-syncing a Multiviewer replay, and loading a different session or circuit.
 
 **Spotify**
@@ -201,6 +202,28 @@ The label on top is the session ("Q1", "P2", "SQ1" for sprint qualifying). The b
 - **Replay friendly.** The feed clock is combined with the Multiviewer player position, so it keeps up with normal playback, and the countdown is rebuilt if you scrub, pause or resume.
 - **Races** are not covered: a race only starts when the lights go out, so there is no reliable time to count to.
 
+### Driver screens: grid, winner, podium and pole
+
+These four screens draw drivers in their **team colors**, using the number and three-letter code that Multiviewer reports for each driver.
+
+<p align="center">
+  <img src="docs/previews/grid-walk.gif" width="128" alt="Grid walkthrough">
+  <img src="docs/previews/winner.gif" width="128" alt="Race winner">
+  <img src="docs/previews/podium.png" width="128" alt="Podium">
+  <img src="docs/previews/pole.gif" width="128" alt="Pole position">
+</p>
+<p align="center"><sub>Grid walkthrough, race winner, podium, pole position</sub></p>
+
+**Grid walkthrough (races).** From 45 minutes before the scheduled start until the lights go out, the panel walks the grid from the front, two drivers at a time: P1 and P2, then P3 and P4, and so on, scrolling down the grid from one pair to the next and looping. Each card shows the position, the driver number and their code on the team color. All text is white with a black outline, so it stays readable on every team color, and all numbers are drawn at the same size. A full lap of a 22 car grid takes about half a minute. Flags and overlays that arrive during the walkthrough are remembered but not shown, and the right flag appears the moment the race starts. The order is the running order in Multiviewer's timing data; if it does not match the grid on your session, please open an issue.
+
+<p align="center"><img src="docs/previews/grid-screens.png" alt="Every screen of a 22 car grid walkthrough" width="640"></p>
+
+**Winner (races).** When Race Control announces which car took the flag first, the panel shows the winner's number big on their team color with confetti, for 10 seconds.
+
+**Podium (races).** Once the session is finished, the winner screen gives way to the podium: three blocks in the team colors of the top three, the winner tallest in the middle, with gold, silver and bronze places. It stays up until the next session. If you connect after the finish, you go straight to the podium.
+
+**Pole position (qualifying).** Shown only after the end of **Q3** (or the last segment of sprint qualifying), never after Q1 or Q2. The driver's number appears on their team color with a blinking border, and it stays up until the next session.
+
 ### Sessions, scrubbing and replays
 
 - Loading a different session or circuit is detected, and everything learned about the old one (flags, seen messages, chequered state, circuit layout) is dropped.
@@ -239,7 +262,7 @@ Everything below is drawn by the app at the panel resolution. Several are also a
 
 **Studio, Test Effects** shows an effect on demand and then restores the real display. It is the quickest way to check how something looks on your panel without waiting for a real event. Buttons:
 
-yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, and the startup animation.
+yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, the grid walkthrough, race winner, podium, pole position, and the startup animation. The four driver screens use the drivers of whatever session is loaded in Multiviewer.
 
 A target picker sends to all panels or to one. If a real event arrives while a test is showing, the real event wins. The track map buttons need a session loaded in Multiviewer, because the layout comes from there.
 
@@ -319,7 +342,7 @@ Settings are stored with `electron-store` in the operating system's per-user app
 | `spotify.js` | OAuth (authorization code flow with a local callback), token refresh, now-playing polling. |
 | `store.js` | Persistent settings and per-panel config; encrypts the Spotify secret. |
 | `ipc.js`, `tray.js`, `autolaunch.js`, `logger.js` | IPC handlers, tray, login item, in-memory activity log. |
-| `protocol/` | Panel commands, PNG and GIF upload framing with CRC32, image processing, and the generators for the sector numbers, track map, border effects, countdown and startup animation. |
+| `protocol/` | Panel commands, PNG and GIF upload framing with CRC32, image processing, and the generators for the sector numbers, track map, border effects, countdown, startup animation and the driver screens (grid walkthrough, winner, podium, pole). |
 
 **Renderer** (`src/renderer`) is plain HTML, CSS and JavaScript with no framework. It reaches the main process only through a small allow-listed bridge in `src/preload`.
 
@@ -400,6 +423,9 @@ Check the panel resolution on its Devices card, and try **Studio, Quick Send** w
 **The yellow flag shows a number even though I chose Track map.**
 The map needs the circuit layout. It is fetched from Multiviewer's circuit API when a session is loaded, so you need an internet connection, and brand-new circuits are not in that dataset. The activity log says which of these it is (`No track layout is available for ...` or `Could not load the track layout ...`). The Test Effects button explains the same thing in a message.
 
+**The grid walkthrough, winner, podium or pole screen does not appear.**
+The grid walkthrough only runs for a race that has not started, from 45 minutes before its scheduled start. The winner appears when Race Control announces the first car to take the flag, the podium once the session status is finished, and pole only after Q3. All of them need Multiviewer's timing data for the session; the Test Effects buttons show each one on demand using the drivers of the loaded session.
+
 **The countdown, flags or map are wrong right after I load a different session.**
 MVLP detects a session change by its session key and starts fresh. If it did not, please open an issue with the activity log lines around the switch.
 
@@ -414,7 +440,9 @@ That is expected: the mapping from marshal sectors to timing sectors is an estim
 - Developed and tested on **Windows 10** with a **32x32** panel. The macOS and Linux builds are configured and the Bluetooth library supports them, but they have not been tested by the author. On Linux you need BlueZ and permission to use Bluetooth without root.
 - The F1 features depend on what Multiviewer's local API exposes. If a future Multiviewer version changes it, parts may stop working.
 - The track map needs a circuit that Multiviewer's public dataset knows. Circuits new to the calendar may be missing until it is updated.
-- The countdown covers practice and qualifying, not races.
+- The countdown covers practice and qualifying, not races. Races get the grid walkthrough instead, because a race only starts when the lights go out and there is no reliable time to count to.
+- There are no start lights: the feed does not report the five lights coming on, and the random delay before they go out cannot be predicted, so the panel simply reacts when the race starts.
+- The podium and pole screens show the result as Multiviewer reports it at the finish. A penalty applied afterwards does not change what was already shown.
 - A panel shows one thing at a time. When several things could apply, the display logic picks one (see [Multiviewer integration](#multiviewer-integration)); there is no split screen.
 - Whether a particular panel firmware plays every GIF timing exactly (very short frames, very long holds) is not guaranteed. The generated effects avoid extreme timings on purpose.
 

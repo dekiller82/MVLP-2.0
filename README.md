@@ -188,11 +188,9 @@ Notes on the details:
 
 For **practice and qualifying** only, the panel counts down to the start of the session.
 
-<p>
-  <img src="docs/previews/countdown.gif" width="128" alt="Countdown animation" align="left" hspace="12">
-  The label on top is the session ("Q1", "P2", "SQ1" for sprint qualifying). The big number is the minutes left (seconds in amber for the final minute, hours when it is far away). The bar along the bottom fills as the start approaches. A delayed start shows an hourglass.
-</p>
-<br clear="left">
+<p align="center"><img src="docs/previews/countdown.gif" width="128" alt="Countdown animation"></p>
+
+The label on top is the session ("Q1", "P2", "SQ1" for sprint qualifying). The big number is the minutes left (seconds in amber for the final minute, hours when it is far away). The bar along the bottom fills as the start approaches. A delayed start shows an hourglass. The states below, left to right: minutes, minutes, seconds in amber, hours away, delayed.
 
 <p align="center"><img src="docs/previews/countdown-states.png" alt="Countdown states: minutes, minutes, seconds in amber, hours, delayed" width="640"></p>
 

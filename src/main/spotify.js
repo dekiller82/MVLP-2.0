@@ -13,6 +13,10 @@ const AUTHORIZE_URL = 'https://accounts.spotify.com/authorize';
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const NOW_PLAYING_URL = 'https://api.spotify.com/v1/me/player/currently-playing';
 
+// How long nothing playing (or a pause) lasts before the art is given up and the idle screens may take over.
+const STOPPED_GRACE_MS = 60000;
+const PAUSED_GRACE_MS = 5 * 60000;
+
 class SpotifyManager extends EventEmitter {
   constructor() {
     super();
@@ -24,6 +28,8 @@ class SpotifyManager extends EventEmitter {
     this.tokenExpiresAt = 0;
     this.lastTrackId = undefined;
     this.suspended = false;
+    this.active = false; // something is playing, or stopped only recently
+    this.inactiveSince = null;
     this.pollTimer = null;
     this.callbackServer = null;
   }
@@ -64,6 +70,22 @@ class SpotifyManager extends EventEmitter {
     this.suspended = suspended;
     logger.info('Spotify', suspended ? 'Suspended while Multiviewer is live.' : 'Resumed.');
     if (!suspended) this.lastTrackId = undefined;
+  }
+
+  _noteActive() {
+    this.inactiveSince = null;
+    if (this.active) return;
+    this.active = true;
+    this.lastTrackId = undefined; // the art is shown again even if it is the same track as before
+    this.emit('playback', true);
+  }
+
+  _noteInactive(graceMs) {
+    if (!this.active) return;
+    this.inactiveSince ??= Date.now();
+    if (Date.now() - this.inactiveSince < graceMs) return;
+    this.active = false;
+    this.emit('playback', false);
   }
 
   stop() {
@@ -190,6 +212,7 @@ class SpotifyManager extends EventEmitter {
 
     if (res.status === 204) {
       this.lastTrackId = null;
+      this._noteInactive(STOPPED_GRACE_MS);
       return;
     }
     if (!res.ok) throw new Error(`Now-playing request failed (${res.status})`);
@@ -198,8 +221,14 @@ class SpotifyManager extends EventEmitter {
     const item = data?.item;
     if (!item) {
       this.lastTrackId = null;
+      this._noteInactive(STOPPED_GRACE_MS);
       return;
     }
+    if (data.is_playing === false) {
+      this._noteInactive(PAUSED_GRACE_MS);
+      return;
+    }
+    this._noteActive();
 
     if (item.id === this.lastTrackId) return;
     this.lastTrackId = item.id;

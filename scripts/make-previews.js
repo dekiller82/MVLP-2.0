@@ -21,6 +21,8 @@ const { makeYellowMap } = require('../src/main/protocol/trackMapGif');
 const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('../src/main/protocol/effectGifs');
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('../src/main/protocol/countdownGif');
 const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('../src/main/protocol/resultGifs');
+const { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif } = require('../src/main/protocol/idleScreens');
+const CIRCUITS = require('../assets/circuits.json');
 
 const OUT = path.join(__dirname, '..', 'docs', 'previews');
 const GIFS = path.join(__dirname, '..', 'assets', 'gifs');
@@ -157,6 +159,31 @@ async function loadCircuit(key) {
   saveAnimation('winner', makeWinnerGif(SAMPLE_GRID[0], PANEL, PANEL));
   saveAnimation('pole', makePoleGif(SAMPLE_GRID[0], PANEL, PANEL));
   await saveSheet('podium', [firstFrame(makePodiumGif(SAMPLE_GRID.slice(0, 3), PANEL, PANEL))], 1);
+
+  // Idle screens: sample data, so no network is needed.
+  const monza = CIRCUITS.find((c) => /monza/i.test(c.name + c.location));
+  const race = { code: 'ITA', msUntil: (4 * 24 + 7) * 3600000, inProgress: false, start: Date.UTC(2026, 8, 6, 13) };
+  saveAnimation('idle-next', makeNextRaceGif({ race, outline: monza.coords }, PANEL, PANEL));
+  saveAnimation('idle-podium', makeLastPodiumGif({
+    code: 'JPN',
+    podium: [
+      { position: 1, tla: 'ANT', number: '12', color: '00D7B6' },
+      { position: 2, tla: 'PIA', number: '81', color: 'F47600' },
+      { position: 3, tla: 'LEC', number: '16', color: 'ED1131' },
+    ],
+  }, PANEL, PANEL));
+  saveAnimation('idle-standings', makeStandingsGif({
+    drivers: [
+      { position: 1, code: 'ANT', points: 302, color: '00D7B6' },
+      { position: 2, code: 'RUS', points: 236, color: '00D7B6' },
+      { position: 3, code: 'HAM', points: 199, color: 'ED1131' },
+    ],
+    constructors: [
+      { position: 1, code: 'MER', points: 538, color: '00D7B6' },
+      { position: 2, code: 'FER', points: 378, color: 'ED1131' },
+      { position: 3, code: 'MCL', points: 306, color: 'F47600' },
+    ],
+  }, PANEL, PANEL));
 
   console.log('Done.');
 })().catch((err) => {

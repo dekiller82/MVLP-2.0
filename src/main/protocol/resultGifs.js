@@ -256,9 +256,8 @@ function makeWinnerGif(driver, width, height) {
 
 const MEDALS = { 1: [255, 215, 0], 2: [200, 200, 205], 3: [205, 127, 50] };
 
-/** Three blocks in team colours: second on the left, the winner tallest in the middle, third on the right. */
-function makePodiumGif(top3, width, height) {
-  const c = newCanvas(width, height);
+/** Draws three blocks in team colours onto `c`: second on the left, the winner tallest in the middle, third on the right. */
+function drawPodium(c, top3, width, height) {
   const gap = 1;
   const blockWidth = Math.floor((width - 2 * gap) / 3);
   const used = 3 * blockWidth + 2 * gap;
@@ -283,6 +282,11 @@ function makePodiumGif(top3, width, height) {
     const style = textStyleFor();
     drawCentered(c, number, scale, centerX, top + 3 * small, style.fg, style.outline, { x, w: blockWidth });
   }
+}
+
+function makePodiumGif(top3, width, height) {
+  const c = newCanvas(width, height);
+  drawPodium(c, top3, width, height);
   return encode(width, height, [frameOf(c, 100)]);
 }
 
@@ -309,4 +313,7 @@ function makePoleGif(driver, width, height) {
   return encode(width, height, [frameOf(c, 100)]);
 }
 
-module.exports = { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif, hexToRgb };
+// The drawing toolkit, shared with the idle screens.
+const toolkit = { newCanvas, fillRect, drawText, drawCentered, textWidth, textStyleFor, frameOf, encode, drawPodium };
+
+module.exports = { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif, hexToRgb, toolkit };

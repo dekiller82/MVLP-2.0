@@ -118,6 +118,9 @@ const TEST_EFFECTS = [
   { kind: 'winner-demo', label: 'Race winner', hint: 'The leader on their team colour with confetti (10 seconds). Uses the loaded session.' },
   { kind: 'podium-demo', label: 'Podium', hint: 'The top three in their team colours. Uses the loaded session.' },
   { kind: 'pole-demo', label: 'Pole position', hint: "POLE and the leader's three-letter code. Uses the loaded session." },
+  { kind: 'idle-next', label: 'Idle: next race', hint: 'The next circuit with a countdown, then the date. Needs internet the first time.' },
+  { kind: 'idle-podium', label: 'Idle: last podium', hint: 'The last race's podium.' },
+  { kind: 'idle-standings', label: 'Idle: standings', hint: 'Top three drivers, then top three teams.' },
   { kind: 'startup', label: 'Startup animation', hint: 'What plays when a panel connects.' },
 ];
 
@@ -126,7 +129,8 @@ async function runTestEffect(section, kind) {
   const input = section.querySelector(`[data-input="${kind}"]`);
   const arg = input ? (input.type === 'number' ? Number(input.value) : input.value) : undefined;
   const sent = await window.mvlp.invoke('test:effect', kind, arg, target === '__all__' ? undefined : target);
-  if (sent === -1) showToast('Load a session in Multiviewer first: this effect uses its data (track layout or drivers).', 'warning', 4000);
+  if (sent === -1 && kind.startsWith('idle-')) showToast('No data for this screen yet. It is fetched from the internet the first time.', 'warning', 4000);
+  else if (sent === -1) showToast('Load a session in Multiviewer first: this effect uses its data (track layout or drivers).', 'warning', 4000);
   else if (sent === -2) showToast('Multiviewer has no track layout for this circuit (new circuits are missing), so there is no map.', 'warning', 5000);
   else if (sent === -3) showToast('The track layout has not loaded yet. Check your internet connection and try again in a moment.', 'warning', 4000);
   else if (sent) showToast(`Showing on ${sent} panel${sent === 1 ? '' : 's'}.`, 'success', 1500);

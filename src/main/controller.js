@@ -13,6 +13,8 @@ const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('./pro
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('./protocol/countdownGif');
 const { makeYellowMap } = require('./protocol/trackMapGif');
 const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('./protocol/resultGifs');
+const { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif } = require('./protocol/idleScreens');
+const { IdleData } = require('./idleData');
 const { MultiviewerPoller } = require('./multiviewer');
 const { SpotifyManager } = require('./spotify');
 
@@ -47,6 +49,11 @@ const DEFAULT_FINISH_TIMINGS = {
   winnerHoldMs: 10000, // the winner screen stays up at least this long
   winnerWaitCapMs: 120000, // if the top three still have not finished after the hold, give up waiting on the winner screen
 };
+
+// The idle rotation: what the panels show when no session is live and nothing is playing.
+const IDLE_SLOT_MS = 10000; // each idle screen stays up this long
+const IDLE_REFRESH_MS = 10 * 60000; // how often stale data is looked at (it is only fetched when past its TTL)
+const NIGHT_CHECK_MS = 60000;
 
 // The panel runs a countdown animation for at most this long (the last minute
 // plus a little); before that it holds a still frame that is replaced each minute.
@@ -104,6 +111,12 @@ class AppController extends EventEmitter {
     this.mvLive = false;
     this.lastArt = null;
     this.gifStopTimers = new Map();
+    this.spotifyActive = false; // Spotify is playing (or was very recently): its art owns the panels
+    this.idleData = null; // created on first use
+    this.idle = null; // { index, timer, refreshTimer } while the idle rotation runs
+    this.dimmed = false; // the panels are at night brightness
+    this.nightTimer = setInterval(() => this._applyBrightness(), NIGHT_CHECK_MS);
+    this.nightTimer.unref?.();
 
     this._wireEvents();
   }
@@ -133,6 +146,7 @@ class AppController extends EventEmitter {
 
     this.spotify.on('status', (status) => this.emit('spotify:status', status));
     this.spotify.on('art', (buffer) => this._onSpotifyArt(buffer));
+    this.spotify.on('playback', (active) => this._onSpotifyPlayback(active));
   }
 
   // ---- Device lifecycle -------------------------------------------------
@@ -152,13 +166,17 @@ class AppController extends EventEmitter {
     // connected after it was first reported, so show that instead of the logo.
     const base = this.mvLive ? this._baseGifName() : null;
     if (this.preSession) await this._sendCountdownToDevice(id);
+    else if (!base && this._shouldIdle()) await this._sendGifPresetToDevice(id, 'mv');
     else await this._sendGifPresetToDevice(id, base || 'mv');
 
     // Spotify's first track is fetched at launch, usually before any panel has
     // connected; show the cached art now rather than waiting for a track change.
-    if (this.spotifyEnabled && !this.mvLive && this.lastArt) {
+    if (this._showsArt()) {
       await this._sendArtToDevice(id, this.lastArt);
     }
+
+    this._updateIdle();
+    this._applyBrightness();
 
     if (!this.startupActionsDone) {
       this.startupActionsDone = true;
@@ -297,6 +315,14 @@ class AppController extends EventEmitter {
       } else {
         custom = (c) => makePoleGif(order[0], c.width ?? 32, c.height ?? 32);
       }
+    } else if (kind === 'idle-next' || kind === 'idle-podium' || kind === 'idle-standings') {
+      const data = this._idleDataSource();
+      await data.refresh().catch(() => {});
+      const name = kind;
+      const screen = this._idleScreens([name])[0];
+      if (!screen) return -1;
+      holdMs = 12000;
+      custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
     } else if (kind === 'delayed') {
       custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
     } else if (kind === 'countdown') {
@@ -329,8 +355,11 @@ class AppController extends EventEmitter {
     this._beginDisplay();
     if (this.preSession) this._pushCountdown();
     else if (this._baseGifName()) this._showBase({ settled: true });
-    else if (this.spotifyEnabled && !this.mvLive && this.lastArt) {
+    else if (this._showsArt()) {
       this.ble.getConnectedIds().forEach((id) => this._sendArtToDevice(id, this.lastArt));
+    } else if (this._shouldIdle()) {
+      if (this.idle) this._idleAdvance(false);
+      else this._startIdle();
     } else this._sendGifPresetToAllConnected('mv');
   }
 
@@ -755,6 +784,7 @@ class AppController extends EventEmitter {
     logger.info('Controller', live ? 'Multiviewer session is live - pausing Spotify art.' : 'Multiviewer session ended - resuming Spotify art.');
     // Resuming makes Spotify re-emit the current track on its next poll.
     this.spotify.setSuspended(live);
+    this._updateIdle();
     if (!live) {
       // Session over (or gone): forget its display state so a new one starts clean.
       this._clearOverlay();
@@ -790,6 +820,8 @@ class AppController extends EventEmitter {
 
   async _onSpotifyArt(artBuffer) {
     this.lastArt = artBuffer;
+    this.spotifyActive = true;
+    this._stopIdle();
     if (this.mvLive || this.isSendingArt) return;
     this._beginDisplay();
     this.isSendingArt = true;
@@ -801,9 +833,180 @@ class AppController extends EventEmitter {
   }
 
   _checkIdleState() {
-    if (!this.mvEnabled && !this.spotifyEnabled) {
+    if (!this.mvEnabled && !this.spotifyEnabled && !this._idleWanted()) {
       this.sendClockToAllConnected().catch(() => {});
     }
+    this._updateIdle();
+  }
+
+  // ---- Idle screens and night dimming -------------------------------------
+
+  _setting(key, fallback) {
+    const value = store.getSettings()[key];
+    return value === undefined ? fallback : value;
+  }
+
+  /** Spotify's art is what the panels show. */
+  _showsArt() {
+    return Boolean(this.spotifyEnabled && this.spotifyActive && !this.mvLive && this.lastArt);
+  }
+
+  _idleScreenNames() {
+    const names = [];
+    if (this._setting('idleNextRace', true)) names.push('idle-next');
+    if (this._setting('idleLastPodium', true)) names.push('idle-podium');
+    if (this._setting('idleStandings', true)) names.push('idle-standings');
+    return names;
+  }
+
+  _idleWanted() {
+    return Boolean(this._setting('idleEnabled', true) && this._idleScreenNames().length);
+  }
+
+  /** Nothing else has a claim on the panels. */
+  _shouldIdle() {
+    return this._idleWanted() && !this.mvLive && !this.preSession && !this._showsArt() && !this.testTimer && this.ble.getConnectedIds().length > 0;
+  }
+
+  _idleDataSource() {
+    if (!this.idleData) {
+      let cachePath = null;
+      try { cachePath = path.join(require('electron').app.getPath('userData'), 'idle-cache.json'); } catch { /* no electron (tests) */ }
+      let circuits = [];
+      try { circuits = JSON.parse(fs.readFileSync(path.join(ASSETS_DIR, 'circuits.json'), 'utf8')); } catch { /* outlines are optional */ }
+      this.idleData = new IdleData({ cachePath, circuits });
+    }
+    return this.idleData;
+  }
+
+  /** Starts or stops the rotation to match what is going on. */
+  _updateIdle() {
+    if (this._shouldIdle()) {
+      if (!this.idle) this._startIdle();
+    } else if (this.idle) {
+      this._stopIdle();
+    }
+    this._applyBrightness();
+  }
+
+  /** Called when a setting that concerns the idle screens or night dimming changed. */
+  refreshIdle() {
+    if (this.idle) {
+      this._stopIdle();
+      this._updateIdle();
+      if (!this.idle) this._restoreDisplay(); // the screens were switched off: put the normal display back
+    } else {
+      this._updateIdle();
+      this._checkIdleState();
+    }
+  }
+
+  _startIdle() {
+    if (this.idle) return;
+    this.idle = { index: -1, timer: null, refreshTimer: null };
+    const refresh = () => this._idleDataSource().refresh().then((changed) => changed && this.idle && this._idleAdvance(false)).catch(() => {});
+    this.idle.refreshTimer = setInterval(refresh, IDLE_REFRESH_MS);
+    this.idle.refreshTimer.unref?.();
+    logger.info('Controller', 'Nothing live and nothing playing: showing the idle screens.');
+    this._idleAdvance(true);
+    refresh();
+  }
+
+  _stopIdle() {
+    if (!this.idle) return;
+    clearTimeout(this.idle.timer);
+    clearInterval(this.idle.refreshTimer);
+    this.idle = null;
+    this._applyBrightness();
+  }
+
+  /** What each idle screen can show right now; a screen without data is left out of the rotation. */
+  _idleScreens(names = this._idleScreenNames()) {
+    const data = this._idleDataSource();
+    const screens = [];
+    for (const name of names) {
+      if (name === 'idle-next') {
+        const race = data.nextRace();
+        if (race) screens.push({ name, build: (w, h) => makeNextRaceGif({ race: data.nextRace() || race, outline: data.outlineFor(race) }, w, h) });
+      } else if (name === 'idle-podium') {
+        const podium = data.lastPodium();
+        if (podium) screens.push({ name, build: (w, h) => makeLastPodiumGif(podium, w, h) });
+      } else {
+        const standings = data.standings();
+        if (standings) screens.push({ name, build: (w, h) => makeStandingsGif(standings, w, h) });
+      }
+    }
+    return screens;
+  }
+
+  /** Shows the next idle screen (or the current one again, if `next` is false) and schedules the one after. */
+  _idleAdvance(next = true) {
+    const idle = this.idle;
+    if (!idle) return;
+    clearTimeout(idle.timer);
+    if (this.testTimer) {
+      idle.timer = setTimeout(() => this._idleAdvance(true), 2000);
+      return;
+    }
+    const screens = this._idleScreens();
+    if (!screens.length) {
+      // No data yet (first run offline): the panel's own clock until some arrives.
+      this._beginDisplay();
+      this.sendClockToAllConnected().catch(() => {});
+      idle.timer = setTimeout(() => this._idleAdvance(true), IDLE_SLOT_MS * 3);
+      return;
+    }
+    if (next) idle.index += 1;
+    const screen = screens[Math.max(0, idle.index) % screens.length];
+    const epoch = this._beginDisplay();
+    Promise.allSettled(this.ble.getConnectedIds().map(async (id) => {
+      const config = store.getDevice(id) || {};
+      const buffer = screen.build(config.width ?? 32, config.height ?? 32);
+      await this._sendGifBuffer(id, screen.name, buffer, true, epoch);
+    })).catch(() => {});
+    // A single screen has nothing to rotate to; do not resend it every slot.
+    idle.timer = setTimeout(() => this._idleAdvance(true), screens.length > 1 ? IDLE_SLOT_MS : IDLE_REFRESH_MS);
+  }
+
+  /** Spotify started or stopped playing (it reports a stop only after a grace period). */
+  _onSpotifyPlayback(active) {
+    if (this.spotifyActive === active) return;
+    this.spotifyActive = active;
+    if (active) return; // the art event follows and takes over
+    if (!this.mvLive && !this.preSession && !this.testTimer) {
+      this._beginDisplay();
+      if (this._shouldIdle()) this._startIdle();
+      else this._sendGifPresetToAllConnected('mv');
+    }
+    this._applyBrightness();
+  }
+
+  /** Whether the local time is inside the night window. */
+  _isNight(date = new Date()) {
+    const parse = (text, fallback) => {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(String(text || ''));
+      return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+    };
+    const start = parse(this._setting('nightStart', '22:00'), 22 * 60);
+    const end = parse(this._setting('nightEnd', '07:00'), 7 * 60);
+    const now = date.getHours() * 60 + date.getMinutes();
+    if (start === end) return false;
+    return start < end ? now >= start && now < end : now >= start || now < end;
+  }
+
+  /** Night brightness applies only while the idle screens are up, so a live session is never dimmed. */
+  _applyBrightness() {
+    const wantDim = Boolean(this.idle && this._setting('nightDimming', true) && this._isNight());
+    const nightLevel = Math.max(1, Math.min(100, Number(this._setting('nightBrightness', 20)) || 20));
+    for (const id of this.ble.getConnectedIds()) {
+      const configured = store.getDevice(id)?.brightness ?? 100;
+      if (wantDim) {
+        this.ble.writeToDevice(id, commands.brightness(Math.min(configured, nightLevel))).catch(() => {});
+      } else if (this.dimmed) {
+        this.ble.writeToDevice(id, commands.brightness(configured)).catch(() => {});
+      }
+    }
+    this.dimmed = wantDim;
   }
 
   // ---- GIF presets ----------------------------------------------------------
@@ -1030,6 +1233,8 @@ class AppController extends EventEmitter {
   }
 
   async shutdown() {
+    clearInterval(this.nightTimer);
+    this._stopIdle();
     this.mv.stop();
     this.spotify.stop();
     try {

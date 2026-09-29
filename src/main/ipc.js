@@ -58,6 +58,7 @@ function registerIpc({ mainWindow, bleBridge, controller }) {
     store.setSetting(key, value);
     if (key === 'launchAtLogin') autolaunch.setLaunchAtLogin(value);
     if (key === 'fullSectorYellows' || key === 'yellowDisplay') controller.refreshYellowDisplay();
+    if (/^(idle|night)/.test(key)) controller.refreshIdle();
     return store.getSettings();
   });
   ipcMain.handle('config:getSpotifyCredentials', () => store.getSpotifyCredentials());

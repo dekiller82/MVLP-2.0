@@ -47,6 +47,27 @@ export async function render(section) {
     </div>
 
     <div class="card">
+      <h3 class="card-title">Idle screens</h3>
+      <p class="help-text">When no session is live and nothing is playing on Spotify, the panels rotate through these screens. Playing a track or starting a session takes over at once.</p>
+      ${toggleRow('idle-toggle', 'Show idle screens', 'Otherwise the panel keeps its last display or its own clock.', settings.idleEnabled !== false)}
+      ${toggleRow('idle-next-toggle', 'Next race', 'The circuit with a countdown, then the date.', settings.idleNextRace !== false)}
+      ${toggleRow('idle-podium-toggle', 'Last podium', 'The top three of the last race.', settings.idleLastPodium !== false)}
+      ${toggleRow('idle-standings-toggle', 'Standings', 'Top three drivers and teams in the championship.', settings.idleStandings !== false)}
+      ${toggleRow('night-toggle', 'Night dimming', 'Dim the panels during the night hours, only while the idle screens are showing.', settings.nightDimming !== false)}
+      <div class="row-between">
+        <div class="row-label"><strong>Night hours</strong><span>From and to, in your local time.</span></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="time" id="night-start" value="${settings.nightStart || '22:00'}" />
+          <input type="time" id="night-end" value="${settings.nightEnd || '07:00'}" />
+        </div>
+      </div>
+      <div class="row-between">
+        <div class="row-label"><strong>Night brightness</strong><span id="night-level-label">${settings.nightBrightness ?? 20}%</span></div>
+        <input type="range" id="night-level" min="1" max="100" value="${settings.nightBrightness ?? 20}" />
+      </div>
+    </div>
+
+    <div class="card">
       <h3 class="card-title">Spotify</h3>
       <div class="row-between">
         <div class="row-label"><strong>Status</strong><span>${spotifyState.enabled ? 'Connected' : 'Not connected'}</span></div>
@@ -80,6 +101,19 @@ export async function render(section) {
   });
   bindToggle(section, 'notif-toggle', 'notifications');
   bindToggle(section, 'sector-toggle', 'fullSectorYellows');
+  bindToggle(section, 'idle-toggle', 'idleEnabled');
+  bindToggle(section, 'idle-next-toggle', 'idleNextRace');
+  bindToggle(section, 'idle-podium-toggle', 'idleLastPodium');
+  bindToggle(section, 'idle-standings-toggle', 'idleStandings');
+  bindToggle(section, 'night-toggle', 'nightDimming');
+  for (const [id, key] of [['night-start', 'nightStart'], ['night-end', 'nightEnd']]) {
+    section.querySelector(`#${id}`).addEventListener('change', (e) => {
+      if (e.target.value) window.mvlp.invoke('config:setSetting', key, e.target.value);
+    });
+  }
+  const level = section.querySelector('#night-level');
+  level.addEventListener('input', () => { section.querySelector('#night-level-label').textContent = `${level.value}%`; });
+  level.addEventListener('change', () => window.mvlp.invoke('config:setSetting', 'nightBrightness', Number(level.value)));
 
   section.querySelector('#spotify-edit-btn').addEventListener('click', () => {
     openSpotifyCredentialsModal({ clientId: creds.clientId, onSaved: () => render(section) });

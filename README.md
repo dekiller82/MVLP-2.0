@@ -22,6 +22,7 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 - [Multiviewer integration](#multiviewer-integration)
 - [Effects gallery](#effects-gallery)
 - [Spotify integration](#spotify-integration)
+- [Idle screens and night dimming](#idle-screens-and-night-dimming)
 - [Panels and Bluetooth](#panels-and-bluetooth)
 - [Settings reference](#settings-reference)
 - [How it works](#how-it-works)
@@ -197,6 +198,7 @@ The label on top is the session ("Q1", "P2", "SQ1" for sprint qualifying). The b
 
 - **Where the start time comes from.** The latest Race Control message such as `Q2 WILL START AT 16:29` (track-local time) wins; otherwise the scheduled start is used. A message saying the start "will be delayed" with no time shows the hourglass until a new time is announced.
 - **Between qualifying segments** the countdown appears as soon as the next start is announced.
+- **Idle screens.** When no session is live and nothing is playing, the panel rotates through the **next race** (circuit and countdown), the **last podium** and the **championship standings**, and dims at night.
 - **Flags wait.** Flags and overlays that arrive during a countdown are remembered but not shown, and the right one appears the moment the session starts.
 - **Accurate over Bluetooth.** Sending an image takes about a second or two, so the app works out where the countdown will be by the time the panel receives it. The last minute is sent as a single one-second-per-frame animation that runs by itself; before that the panel holds a still frame that is replaced once a minute, timed to land on the minute change.
 - **Replay friendly.** The feed clock is combined with the Multiviewer player position, so it keeps up with normal playback, and the countdown is rebuilt if you scrub, pause or resume.
@@ -266,7 +268,7 @@ Everything below is drawn by the app at the panel resolution. Several are also a
 
 **Studio, Test Effects** shows an effect on demand and then restores the real display. It is the quickest way to check how something looks on your panel without waiting for a real event. Buttons:
 
-yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, the grid walkthrough, race winner, podium, pole position, and the startup animation. The four driver screens use the drivers of whatever session is loaded in Multiviewer.
+yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, the grid walkthrough, race winner, podium, pole position, the three idle screens, and the startup animation. The four driver screens use the drivers of whatever session is loaded in Multiviewer.
 
 A target picker sends to all panels or to one. If a real event arrives while a test is showing, the real event wins. The track map buttons need a session loaded in Multiviewer, because the layout comes from there.
 
@@ -283,7 +285,29 @@ Details:
 - The tokens are refreshed automatically. The client secret is stored encrypted with your operating system's secure storage (Electron `safeStorage`).
 - If a panel connects after the first track was already fetched, the art is sent to it right away instead of waiting for the next song.
 - **While a live Multiviewer session is running, Spotify pauses.** Flags take over the panel. When the session ends, or you switch Multiviewer off, MVLP re-sends the current track within a few seconds.
-- If neither integration is switched on, the panel shows its clock.
+- Art stays up while music plays. If nothing has been playing for a minute, or a track has been paused for five minutes, the [idle screens](#idle-screens-and-night-dimming) take over; playing again brings the art straight back.
+- If neither integration is switched on and the idle screens are off, the panel shows its clock.
+
+## Idle screens and night dimming
+
+When Multiviewer has no live session and Spotify is not playing, the panel rotates through up to three screens, ten seconds each. Any session or track takes over at once.
+
+<p align="center">
+  <img src="docs/previews/idle-next.gif" width="128" alt="Next race">
+  <img src="docs/previews/idle-podium.gif" width="128" alt="Last podium">
+  <img src="docs/previews/idle-standings.gif" width="128" alt="Standings">
+</p>
+<p align="center"><sub>Next race, last podium, standings</sub></p>
+
+- **Next race.** The circuit outline with the time to go ("4D 7H", "5H 30M", "45M", "NOW"), then the country code and the date. A race counts as still on for three hours after its start. A circuit without an outline in the bundled set gets a single page of code, countdown and date.
+- **Last podium.** "LAST" and the country code, then the podium of the last race in team colors.
+- **Standings.** The top three drivers with their points, then the top three teams.
+- **Data.** It comes from the free [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the community successor to Ergast), not from Multiviewer. Results and standings are refreshed at most every 6 hours and the calendar every 12, so a running app makes a handful of requests a day, one at a time. Everything is cached on disk, so the screens work offline after the first fetch, and failures back off (15 seconds, 1 minute, then every 5 minutes) while the old copy keeps being used. Only the public F1 data is requested; nothing about you is sent.
+- **Outlines.** The circuit outlines are a snapshot from the MIT licensed [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) dataset, matched to the calendar by location (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). `npm run circuits` rebuilds `assets/circuits.json` when a new circuit is added.
+- **No data yet.** Offline on the very first run there is nothing to show, so the panel's own clock is used until data arrives.
+- **Night dimming.** Between the night start and end times (default 22:00 to 07:00, your local time) the panels drop to the night brightness (default 20 percent, never above the panel's own brightness). It applies only while the idle screens are showing, so a live session or album art is never dimmed, and the normal brightness comes back the moment something else takes over or the night ends.
+
+Every screen, the night window and the brightness are set under **Settings, Idle screens**. The Studio has a test button for each screen.
 
 ## Panels and Bluetooth
 
@@ -307,6 +331,11 @@ Bluetooth is handled entirely in the main process with [`@stoprocent/noble`](htt
 | Desktop notifications | On | Settings | Notify on connects, disconnects and errors. |
 | Yellow flag display | Sector number | Settings | Show a flagged sector as a number or as a track map. |
 | Full sectors for yellow flags | Off | Settings | Show timing sectors 1 to 3 instead of marshal sectors. |
+| Show idle screens | On | Settings | Rotate the idle screens when nothing is live or playing. |
+| Next race, Last podium, Standings | On | Settings | Which idle screens are in the rotation. |
+| Night dimming | On | Settings | Dim during the night hours, only while idle screens show. |
+| Night hours | 22:00 to 07:00 | Settings | Local time window for dimming. |
+| Night brightness | 20 | Settings | Brightness percent used during the night. |
 | Multiviewer integration | Off | Dashboard, tray | Read Multiviewer and mirror the track status. |
 | Spotify integration | Off | Dashboard, tray | Show album art. |
 | Spotify credentials | none | Settings | Client ID and secret of your Spotify developer app. |
@@ -343,10 +372,11 @@ Settings are stored with `electron-store` in the operating system's per-user app
 | `ble-bridge.js` | Bluetooth: scan, connect by name, auto-reconnect, per-panel write queue with timeouts. |
 | `controller.js` | The brain: turns feed events into displays, runs the countdown, overlays, test effects, startup animation and Spotify handover. |
 | `multiviewer.js` | Polls Multiviewer and turns raw state into events: track status, sector flags, overlays, chequered, pre-session, session changes, circuit layout. |
+| `idleData.js` | Jolpica calendar, results and standings for the idle screens: disk cache, TTLs, back-off, circuit outline matching. |
 | `spotify.js` | OAuth (authorization code flow with a local callback), token refresh, now-playing polling. |
 | `store.js` | Persistent settings and per-panel config; encrypts the Spotify secret. |
 | `ipc.js`, `tray.js`, `autolaunch.js`, `logger.js` | IPC handlers, tray, login item, in-memory activity log. |
-| `protocol/` | Panel commands, PNG and GIF upload framing with CRC32, image processing, and the generators for the sector numbers, track map, border effects, countdown, startup animation and the driver screens (grid walkthrough, winner, podium, pole). |
+| `protocol/` | Panel commands, PNG and GIF upload framing with CRC32, image processing, and the generators for the sector numbers, track map, border effects, countdown, startup animation, the driver screens (grid walkthrough, winner, podium, pole) and the idle screens. |
 
 **Renderer** (`src/renderer`) is plain HTML, CSS and JavaScript with no framework. It reaches the main process only through a small allow-listed bridge in `src/preload`.
 
@@ -430,6 +460,9 @@ The map needs the circuit layout. It is fetched from Multiviewer's v1 circuit AP
 **The grid walkthrough, winner, podium or pole screen does not appear.**
 The grid walkthrough only runs for a race that has not started, from 45 minutes before its scheduled start. The winner appears 5 seconds after the chequered flag once the leader has taken it, the podium once the top three all have (and the winner screen has had its 10 seconds), and pole only after Q3. All of them need Multiviewer's timing data for the session; the Test Effects buttons show each one on demand using the drivers of the loaded session.
 
+**The panel is dark, or shows the clock, when nothing is on.**
+The idle screens need data from the Jolpica API the first time; offline on a first run the clock is shown. If the panel is dim, check the night hours under Settings, Idle screens: dimming applies only while the idle screens show.
+
 **The countdown, flags or map are wrong right after I load a different session.**
 MVLP detects a session change by its session key and starts fresh. If it did not, please open an issue with the activity log lines around the switch.
 
@@ -456,6 +489,7 @@ That is expected: the mapping from marshal sectors to timing sectors is an estim
 - The original **[MVLP](https://github.com/dekiller82/MVLP)** Python app, which this project rewrites.
 - **[sdolphin-JP/ipixel-ctrl](https://github.com/sdolphin-JP/ipixel-ctrl)** and **[lucagoc/pypixelcolor](https://github.com/lucagoc/pypixelcolor)** for the reverse-engineered iPixel protocol and the reference behaviour that made the Bluetooth side reliable.
 - **[Multiviewer for F1](https://multiviewer.app/)** for the local API and the circuit dataset.
+- **[Jolpica F1](https://github.com/jolpica/jolpica-f1)** for the free race calendar, results and standings API, and **[bacinger/f1-circuits](https://github.com/bacinger/f1-circuits)** for the circuit outlines (MIT, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 - **[@stoprocent/noble](https://github.com/stoprocent/noble)** for cross-platform Bluetooth Low Energy in Node.
 
 MVLP is an unofficial fan project. It is not affiliated with or endorsed by Formula 1, Multiviewer, Spotify, or the makers of iPixel panels. Formula 1, F1 and related marks are trademarks of their respective owners.

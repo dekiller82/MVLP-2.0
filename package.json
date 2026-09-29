@@ -11,6 +11,7 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "previews": "node scripts/make-previews.js",
+    "circuits": "node scripts/build-circuits.js",
     "icons": "node scripts/make-icons.js",
     "dist": "npm run icons && electron-builder",
     "dist:win": "npm run icons && electron-builder --win",

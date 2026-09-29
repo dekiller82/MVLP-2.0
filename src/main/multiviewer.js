@@ -6,6 +6,11 @@ const logger = require('./logger');
 const MV_URL = 'http://127.0.0.1:10101/api/graphql';
 const QUERY = { query: 'query { f1LiveTimingState { TrackStatus, SessionStatus, SessionInfo, SessionData, WeatherData, RaceControlMessages } f1LiveTimingClock { trackTime paused } players { type state { paused live currentTime interpolatedCurrentTime } driverData { tla } } }' };
 const CIRCUIT_API = 'https://api.multiviewer.app/api/v1/circuits';
+// After a failed layout request, wait longer each time (the last step repeats), with a little
+// random spread so many copies of the app that fail together do not all retry together.
+const CIRCUIT_RETRY_STEPS_MS = [15000, 60000, 300000];
+const CIRCUIT_RETRY_JITTER = 0.2;
+const CIRCUIT_RETRY_AFTER_CAP_MS = 60 * 60000;
 // Grid walkthrough: shown from this long before the scheduled start of a race, until the lights go out.
 const GRID_LEAD_MS = 45 * 60000;
 const GRID_TAIL_MS = 60 * 60000; // give up if the race is this late (avoids looping forever)
@@ -18,6 +23,15 @@ const FINISH_POLL_MS = 1000; // how often the timing data is read while a race i
 const POLE_MIN_MS = 10000;
 const POLE_CAP_MS = 100000;
 const ACTION_MAP = { 1: 'green', 2: 'yellow', 4: 'sc', 5: 'red', 6: 'vsc', 7: 'vsc-ending' };
+
+/** A Retry-After header (seconds, or an HTTP date) as milliseconds; 0 if absent or unreadable. */
+function parseRetryAfter(value) {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
+}
 
 /** Short stable string for a piece of text, used to tell one grid order from another. */
 function hashString(text) {
@@ -88,6 +102,7 @@ class MultiviewerPoller extends EventEmitter {
     this.circuitKey = null;
     this.circuitStatus = 'none'; // 'none' | 'ready' | 'unavailable' (not in the dataset) | 'error' (will retry)
     this.circuitRetryAt = 0;
+    this.circuitFailures = 0; // consecutive failed layout requests, for the retry delay
     this.circuitLoading = false;
     this.poleTimings = { minMs: POLE_MIN_MS, capMs: POLE_CAP_MS };
     this.drivers = null; // racing number -> { number, tla, name, team, color }
@@ -205,11 +220,20 @@ class MultiviewerPoller extends EventEmitter {
       await this._loadSectorMapInner();
     } catch (err) {
       this.circuitStatus = 'error';
-      this.circuitRetryAt = Date.now() + 15000;
-      logger.warn('Multiviewer', `Could not load the track layout: ${err.message}. Retrying shortly.`);
+      this.circuitFailures += 1;
+      const delay = this._circuitRetryDelay(this.circuitFailures, err.retryAfterMs);
+      this.circuitRetryAt = Date.now() + delay;
+      logger.warn('Multiviewer', `Could not load the track layout: ${err.message}. Trying again in ${Math.round(delay / 1000)} s.`);
     } finally {
       this.circuitLoading = false;
     }
+  }
+
+  /** How long to wait after the `failures`-th failure in a row; a server's Retry-After can only make it longer. */
+  _circuitRetryDelay(failures, retryAfterMs = 0) {
+    const step = CIRCUIT_RETRY_STEPS_MS[Math.min(failures, CIRCUIT_RETRY_STEPS_MS.length) - 1];
+    const base = Math.max(step, Math.min(retryAfterMs || 0, CIRCUIT_RETRY_AFTER_CAP_MS));
+    return Math.round(base * (1 + Math.random() * CIRCUIT_RETRY_JITTER));
   }
 
   async _loadSectorMapInner() {
@@ -234,13 +258,18 @@ class MultiviewerPoller extends EventEmitter {
         logger.warn('Multiviewer', `No track layout is available for ${state?.SessionInfo?.Meeting?.Name || circuitKey} (circuit ${circuitKey}); using sector numbers instead.`);
         return;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.retryAfterMs = parseRetryAfter(res.headers?.get?.('retry-after'));
+        throw err;
+      }
       const data = await res.json();
       const marshalList = [...(data.marshalSectors || [])].sort((a, b) => a.number - b.number).map((m) => ({ number: m.number, length: m.length }));
       if (marshalList.length && data.x?.length) {
         this.circuit = { x: data.x, y: data.y, rotation: data.rotation || 0, marshal: marshalList, name: data.circuitName || String(circuitKey) };
         this.circuitKey = key;
         this.circuitStatus = 'ready';
+        this.circuitFailures = 0;
         logger.info('Multiviewer', `Circuit layout ready for ${this.circuit.name}.`);
         this.emit('circuit');
       }
@@ -357,6 +386,7 @@ class MultiviewerPoller extends EventEmitter {
     this.circuit = null;
     this.circuitKey = null;
     this.circuitStatus = 'none';
+    this.circuitFailures = 0;
     this.sectorMap = null;
     this.sectorMapKey = null;
     this.drivers = null;

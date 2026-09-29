@@ -157,7 +157,7 @@ A yellow can be shown two ways, chosen in **Settings, Yellow flag display**.
 - **Full sectors.** Turn on **Full sectors for yellow flags** to show 1, 2 or 3 instead, or to light a whole timing sector on the map. No feed maps one numbering to the other, so MVLP estimates it from the circuit layout and the timing sector sizes. It is accurate to about one marshal sector near a boundary.
 - **Double yellow** flashes faster (180 ms per phase instead of 250 ms), in both styles.
 - **Several sectors** flagged at once: the number style shows the most recent one; the map lights all of them. When one clears, the display follows.
-- **Track map data.** The circuit outline comes from Multiviewer's public circuit API and is fetched once per circuit. Brand-new circuits that are not in that dataset have no layout, and MVLP falls back to the number style for them. A failed fetch is retried automatically.
+- **Track map data.** The circuit outline comes from Multiviewer's public v1 circuit API and is fetched once per circuit. Multiviewer has said that API is no longer maintained (it is kept up only for compatibility) and that no v2 API will be made public, so circuits added to the calendar from now on, such as the new Madrid circuit for 2026, will not appear in it. For a circuit with no layout, MVLP falls back to the number style. A failed fetch is retried automatically.
 
 <table>
   <tr>
@@ -425,7 +425,7 @@ This happens occasionally with these panels. MVLP retries on its own, and the se
 Check the panel resolution on its Devices card, and try **Studio, Quick Send** with a bundled animation. Sending an image with a wrong length header, or writing without response, makes a panel ignore the data; MVLP does neither.
 
 **The yellow flag shows a number even though I chose Track map.**
-The map needs the circuit layout. It is fetched from Multiviewer's circuit API when a session is loaded, so you need an internet connection, and brand-new circuits are not in that dataset. The activity log says which of these it is (`No track layout is available for ...` or `Could not load the track layout ...`). The Test Effects button explains the same thing in a message.
+The map needs the circuit layout. It is fetched from Multiviewer's v1 circuit API when a session is loaded, so you need an internet connection. Brand-new circuits (Madrid for 2026, for example) are not in it and never will be: Multiviewer has said that API is no longer updated. The activity log says which of these it is (`No track layout is available for ...` or `Could not load the track layout ...`). The Test Effects button explains the same thing in a message.
 
 **The grid walkthrough, winner, podium or pole screen does not appear.**
 The grid walkthrough only runs for a race that has not started, from 45 minutes before its scheduled start. The winner appears 5 seconds after the chequered flag once the leader has taken it, the podium once the top three all have (and the winner screen has had its 10 seconds), and pole only after Q3. All of them need Multiviewer's timing data for the session; the Test Effects buttons show each one on demand using the drivers of the loaded session.
@@ -443,7 +443,7 @@ That is expected: the mapping from marshal sectors to timing sectors is an estim
 
 - Developed and tested on **Windows 10** with a **32x32** panel. The macOS and Linux builds are configured and the Bluetooth library supports them, but they have not been tested by the author. On Linux you need BlueZ and permission to use Bluetooth without root.
 - The F1 features depend on what Multiviewer's local API exposes. If a future Multiviewer version changes it, parts may stop working.
-- The track map needs a circuit that Multiviewer's public dataset knows. Circuits new to the calendar may be missing until it is updated.
+- The track map needs a circuit that Multiviewer's public v1 circuit API knows. Multiviewer has said that API is no longer maintained and that there will be no public v2, so circuits new to the calendar will not get a layout, and the API could be removed at some point. Those circuits use the sector number instead. Layouts already seen are not cached on disk yet, so the map also needs an internet connection each time you start MVLP on a session.
 - The countdown covers practice and qualifying, not races. Races get the grid walkthrough instead, because a race only starts when the lights go out and there is no reliable time to count to.
 - There are no start lights: the feed does not report the five lights coming on, and the random delay before they go out cannot be predicted, so the panel simply reacts when the race starts.
 - The podium and pole screens show the result as Multiviewer reports it at the finish. A penalty applied afterwards does not change what was already shown.

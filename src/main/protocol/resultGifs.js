@@ -119,11 +119,11 @@ function encode(width, height, frames) {
  * A driver's number filled into the zone [zoneTop, zoneTop + zoneHeight), as big as
  * fits, centred on `centerX` within `maxWidth`.
  */
-function drawNumber(c, number, centerX, maxWidth, zoneTop, zoneHeight, rgb, outline = null, clip = null, round = Math.round) {
+function drawNumber(c, number, centerX, maxWidth, zoneTop, zoneHeight, rgb, outline = null, clip = null, round = Math.round, maxScale = 99) {
   const text = String(number);
   // One size for every number, as big as two digits allow (with a pixel for the outline
   // on each side), so 1 and 63 come out the same height.
-  let scale = Math.min(99, Math.floor(zoneHeight / 5));
+  let scale = Math.min(maxScale, Math.floor(zoneHeight / 5));
   while (scale > 1 && textWidth('00', scale, 1) + 2 > maxWidth) scale--;
   drawCentered(c, text, scale, centerX, zoneTop + Math.floor((zoneHeight - 5 * scale) / 2), rgb, outline, clip || { x: 0, w: maxWidth }, round);
 }
@@ -145,15 +145,19 @@ function drawDriverCard(c, driver, x0, cardWidth, leftCard) {
   fillRect(c, x0, 0, cardWidth, h, bg);
 
   const pos = `P${driver.position}`;
-  drawCentered(c, pos, fitScale(pos, cardWidth - 2, small), centerX, Math.round(h * 0.07), fg, outline, clip);
-
-  const zoneTop = Math.round(h * 0.3);
-  // A single digit (6 px) cannot sit exactly in the middle of a 15 px card. Lean both cards
-  // towards the divider, so the pair stays symmetric about the middle of the screen.
-  drawNumber(c, driver.number, centerX, cardWidth, zoneTop, Math.round(h * 0.74) - zoneTop, fg, outline, clip, leftCard ? Math.ceil : Math.floor);
+  const posScale = fitScale(pos, cardWidth - 2, small);
+  const posTop = Math.round(h * 0.07);
+  drawCentered(c, pos, posScale, centerX, posTop, fg, outline, clip);
 
   const tlaScale = fitScale(driver.tla, cardWidth - 2, small);
-  drawCentered(c, driver.tla, tlaScale, centerX, h - 5 * tlaScale - Math.round(h * 0.09), fg, outline, clip);
+  const tlaTop = h - 5 * tlaScale - Math.round(h * 0.09);
+  drawCentered(c, driver.tla, tlaScale, centerX, tlaTop, fg, outline, clip);
+
+  // The number sits centred in the space between the two, at the same size as they are
+  // (a bigger number crowds the card). A number at this size has an odd width, like the card,
+  // so it centres exactly.
+  const zoneTop = posTop + 5 * posScale + 1;
+  drawNumber(c, driver.number, centerX, cardWidth, zoneTop, tlaTop - 1 - zoneTop, fg, outline, clip, Math.round, small);
 }
 
 /** Two drivers side by side: the front-row pair, then the next pair back, and so on. */

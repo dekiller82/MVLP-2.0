@@ -2,7 +2,7 @@
 
 Newest first. The app shows the entries for the versions you skipped the first time it starts after an update. Format: `## version (date)`, then `### Section` headings with `-` bullets.
 
-## 2.0.3 (unreleased)
+## 2.1.0 (2026-09-30)
 
 ### New
 - Idle weekend schedule: one page per day of the coming race weekend with each session's start time in your local time.

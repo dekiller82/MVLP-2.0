@@ -119,7 +119,7 @@ const TEST_EFFECTS = [
   { kind: 'podium-demo', label: 'Podium', hint: 'The top three in their team colours. Uses the loaded session.' },
   { kind: 'pole-demo', label: 'Pole position', hint: "POLE and the leader's three-letter code. Uses the loaded session." },
   { kind: 'idle-next', label: 'Idle: next race', hint: 'The next circuit with a countdown, then the date. Needs internet the first time.' },
-  { kind: 'idle-podium', label: 'Idle: last podium', hint: 'The last race's podium.' },
+  { kind: 'idle-podium', label: 'Idle: last podium', hint: "The last race's podium." },
   { kind: 'idle-standings', label: 'Idle: standings', hint: 'Top three drivers, then top three teams.' },
   { kind: 'startup', label: 'Startup animation', hint: 'What plays when a panel connects.' },
 ];

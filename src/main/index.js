@@ -39,7 +39,7 @@ function createWindow() {
     show: !(settings.launchAtLogin && settings.startMinimized && autolaunch.wasLaunchedAtLogin()), // "start in tray" applies to login starts only
     backgroundColor: '#111318',
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),
+    icon: path.join(__dirname, '..', '..', 'assets', 'icons', 'icon-256.png'), // a smaller size than the master scales down more cleanly in the taskbar
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,

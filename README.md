@@ -520,6 +520,7 @@ That is expected: the mapping from marshal sectors to timing sectors is an estim
 ## Acknowledgements
 
 - The original **[MVLP](https://github.com/dekiller82/MVLP)** Python app, which this project rewrites.
+- **[LapsTimeOFF/DigiFlag_F1MV](https://github.com/LapsTimeOFF/DigiFlag_F1MV)** (the DigiFlag team) for the flag animations shipped in `assets/gifs/` (MIT, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 - **[sdolphin-JP/ipixel-ctrl](https://github.com/sdolphin-JP/ipixel-ctrl)** and **[lucagoc/pypixelcolor](https://github.com/lucagoc/pypixelcolor)** for the reverse-engineered iPixel protocol and the reference behaviour that made the Bluetooth side reliable.
 - **[Multiviewer for F1](https://multiviewer.app/)** for the local API and the circuit dataset.
 - **[Jolpica F1](https://github.com/jolpica/jolpica-f1)** for the free race calendar, results and standings API, and **[bacinger/f1-circuits](https://github.com/bacinger/f1-circuits)** for the circuit outlines (MIT, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

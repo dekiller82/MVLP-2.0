@@ -10,6 +10,7 @@ const { AppController } = require('./controller');
 const { AppTray } = require('./tray');
 const { registerIpc } = require('./ipc');
 const autolaunch = require('./autolaunch');
+const { Updater } = require('./updater');
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('app.mvlp.desktop');
@@ -24,6 +25,7 @@ let mainWindow;
 let tray;
 let controller;
 let bleBridge;
+let updater;
 let shuttingDown = false;
 
 function createWindow() {
@@ -79,7 +81,14 @@ app.whenReady().then(() => {
   controller = new AppController(bleBridge);
   tray = new AppTray(mainWindow);
 
-  registerIpc({ mainWindow, bleBridge, controller });
+  // In-app installs work for the Windows installer and the Linux AppImage; see updater.js. Elsewhere the button opens the release page.
+  const canInstall = app.isPackaged && (process.platform === 'win32' || (process.platform === 'linux' && Boolean(process.env.APPIMAGE)));
+  updater = new Updater({ currentVersion: app.getVersion(), canInstall, getAutoUpdater: () => require('electron-updater').autoUpdater });
+  updater.on('state', (state) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updater:state', state);
+  });
+
+  registerIpc({ mainWindow, bleBridge, controller, updater });
 
   controller.on('mv:status', (state) => tray.setStatus(state === 'connected' ? 'connected' : state === 'retrying' ? 'warning' : 'idle'));
 
@@ -90,6 +99,7 @@ app.whenReady().then(() => {
     if (creds.clientId && creds.clientSecret) controller.setSpotifyEnabled(true, creds.clientId, creds.clientSecret);
   }
   autolaunch.setLaunchAtLogin(Boolean(settings.launchAtLogin));
+  if (app.isPackaged) updater.startAutoCheck(settings.autoUpdateCheck !== false);
 
   logger.info('App', 'MVLP started.');
 

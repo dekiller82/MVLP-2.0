@@ -27,6 +27,7 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 - [Settings reference](#settings-reference)
 - [How it works](#how-it-works)
 - [Panel protocol notes](#panel-protocol-notes)
+- [Updates](#updates)
 - [Building installers](#building-installers)
 - [Regenerating the previews](#regenerating-the-previews)
 - [Troubleshooting](#troubleshooting)
@@ -69,6 +70,10 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 - An internet connection for the track map layout and for Spotify.
 
 ## Quick start
+
+**Installers.** Download the latest installer for your system from the [Releases page](https://github.com/dekiller82/MVLP-2.0/releases/latest): a Windows setup `.exe`, a macOS `.dmg` (Intel or Apple silicon) or a Linux AppImage or `.deb`. The builds are not code-signed, so Windows SmartScreen shows a warning (More info, Run anyway) and macOS needs a right click, Open the first time.
+
+**From source.**
 
 ```bash
 git clone https://github.com/dekiller82/MVLP-2.0.git
@@ -416,16 +421,26 @@ Commands implemented in `src/main/protocol/commands.js`:
 | Program mode | `0x8008` | Play a list of buffers |
 | Expert | any | Raw hex payload |
 
+## Updates
+
+MVLP looks at this repository's latest GitHub release at launch and every 6 hours (switch it off under **Settings, About**; **Check now** checks on demand). When a newer version exists a banner appears in the sidebar and in Settings.
+
+- **Windows (installer) and Linux (AppImage):** the button says **Update now**. It downloads the update in the background with a progress percentage, then **Restart and install** replaces the app and starts the new version.
+- **macOS and the Linux `.deb`:** the button says **Download from GitHub** and opens the release page. macOS cannot replace an app that is not code-signed, and a `.deb` belongs to the package manager.
+- Only the version number and release page are requested from GitHub; nothing about you is sent. Running from source never checks.
+
 ## Building installers
 
+Releases are built by GitHub Actions: pushing a tag like `v2.0.1` builds the Windows, macOS and Linux installers and attaches them to a new release, together with the small metadata files the in-app updater reads. Bump `version` in `package.json` to match the tag first. To build locally:
+
 ```bash
-npm run dist:win     # NSIS installer and portable .exe
+npm run dist:win     # NSIS installer
 npm run dist:mac     # .dmg and .zip (build on macOS)
 npm run dist:linux   # AppImage and .deb
 npm run dist:all     # everything the host can build
 ```
 
-Each script regenerates the icons first, then runs `electron-builder`. Installers are written to `release/`. The native Bluetooth module is unpacked from the archive automatically (`asarUnpack` in `package.json`). Building macOS targets generally needs macOS.
+Each script regenerates the icons first, then runs `electron-builder` (without publishing). On Windows, building needs either an administrator shell or Developer Mode switched on, because electron-builder unpacks a tool archive that contains symbolic links. Installers are written to `release/`. The native Bluetooth module is unpacked from the archive automatically (`asarUnpack` in `package.json`). Building macOS targets generally needs macOS.
 
 ## Regenerating the previews
 

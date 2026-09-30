@@ -10,13 +10,14 @@ const INVOKE_CHANNELS = new Set([
   'ble:listPresetGifs', 'test:effect', 'ble:sendClockToAll', 'ble:writeFiles',
   'mv:setEnabled', 'mv:getState', 'spotify:saveAndConnect', 'spotify:disconnect', 'spotify:getState',
   'app:chooseFiles', 'app:getVersion', 'app:openExternal', 'app:getLaunchAtLogin', 'app:quit',
+  'updater:getState', 'updater:check', 'updater:download', 'updater:install', 'updater:openRelease',
   'log:getEntries', 'debug:trace',
 ]);
 
 const EVENT_CHANNELS = new Set([
   'ble:chooserDevices',
   'device:connected', 'device:disconnected', 'device:connect-failed',
-  'mv:status', 'mv:action', 'spotify:status', 'log:entry',
+  'mv:status', 'mv:action', 'spotify:status', 'log:entry', 'updater:state',
 ]);
 
 contextBridge.exposeInMainWorld('mvlp', {

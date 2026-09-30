@@ -13,16 +13,17 @@
     "previews": "node scripts/make-previews.js",
     "circuits": "node scripts/build-circuits.js",
     "icons": "node scripts/make-icons.js",
-    "dist": "npm run icons && electron-builder",
-    "dist:win": "npm run icons && electron-builder --win",
-    "dist:mac": "npm run icons && electron-builder --mac",
-    "dist:linux": "npm run icons && electron-builder --linux",
-    "dist:all": "npm run icons && electron-builder -mwl",
+    "dist": "npm run icons && electron-builder --publish never",
+    "dist:win": "npm run icons && electron-builder --win --publish never",
+    "dist:mac": "npm run icons && electron-builder --mac --publish never",
+    "dist:linux": "npm run icons && electron-builder --linux --publish never",
+    "dist:all": "npm run icons && electron-builder -mwl --publish never",
     "postinstall": "node scripts/make-icons.js"
   },
   "dependencies": {
     "@stoprocent/noble": "^2.8.0",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9",
     "gifuct-js": "^2.1.2",
     "jimp": "^0.22.12",
     "omggif": "^1.0.10",
@@ -54,20 +55,16 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "MVLP-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
@@ -87,7 +84,8 @@
         }
       ],
       "icon": "build/icon.png",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "artifactName": "MVLP-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -108,7 +106,13 @@
       ],
       "icon": "build/icon.png",
       "category": "Utility",
-      "maintainer": "dekiller82"
+      "maintainer": "dekiller82",
+      "artifactName": "MVLP-${version}-linux-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "dekiller82",
+      "repo": "MVLP-2.0"
     }
   },
   "repository": {

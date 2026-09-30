@@ -7,6 +7,7 @@ import * as devices from './views/devices.js';
 import * as studio from './views/studio.js';
 import * as settingsView from './views/settings.js';
 import { renderOnboarding } from './views/onboarding.js';
+import { initUpdates, setupUpdateBanner } from './components/updates.js';
 import { escapeHtml } from './util.js';
 
 const views = {
@@ -93,6 +94,8 @@ async function bootstrap() {
   setupNav();
   setupLogDrawer();
   setupGlobalStatus();
+  await initUpdates();
+  setupUpdateBanner();
   setupDeviceToasts();
   // Main reconnects remembered panels on its own; just mirror what's live.
   await ble.init();

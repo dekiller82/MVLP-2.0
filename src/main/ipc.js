@@ -6,6 +6,7 @@ const { ipcMain, dialog, shell, app, Notification } = require('electron');
 const store = require('./store');
 const logger = require('./logger');
 const autolaunch = require('./autolaunch');
+const { REPO } = require('./updater');
 
 function notify(title, body) {
   if (!store.getSettings().notifications) return;
@@ -13,7 +14,7 @@ function notify(title, body) {
   new Notification({ title, body }).show();
 }
 
-function registerIpc({ mainWindow, bleBridge, controller }) {
+function registerIpc({ mainWindow, bleBridge, controller, updater }) {
   const send = (channel, ...args) => {
     if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     try {
@@ -59,6 +60,7 @@ function registerIpc({ mainWindow, bleBridge, controller }) {
     if (key === 'launchAtLogin') autolaunch.setLaunchAtLogin(value);
     if (key === 'fullSectorYellows' || key === 'yellowDisplay') controller.refreshYellowDisplay();
     if (/^(idle|night)/.test(key)) controller.refreshIdle();
+    if (key === 'autoUpdateCheck') updater.startAutoCheck(Boolean(value) && app.isPackaged);
     return store.getSettings();
   });
   ipcMain.handle('config:getSpotifyCredentials', () => store.getSpotifyCredentials());
@@ -115,6 +117,13 @@ function registerIpc({ mainWindow, bleBridge, controller }) {
     return result.canceled ? [] : result.filePaths;
   });
   ipcMain.handle('app:getVersion', () => app.getVersion());
+
+  // ---- Updates ---------------------------------------------------------------
+  ipcMain.handle('updater:getState', () => updater.state);
+  ipcMain.handle('updater:check', () => updater.check({ manual: true }));
+  ipcMain.handle('updater:download', () => updater.download());
+  ipcMain.handle('updater:install', () => updater.install());
+  ipcMain.handle('updater:openRelease', () => shell.openExternal(updater.state.url || `https://github.com/${REPO}/releases/latest`));
   ipcMain.handle('app:openExternal', (_e, url) => shell.openExternal(url));
   ipcMain.handle('app:getLaunchAtLogin', () => autolaunch.getLaunchAtLogin());
   ipcMain.handle('app:quit', () => app.quit());

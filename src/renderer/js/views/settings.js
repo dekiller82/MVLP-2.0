@@ -3,6 +3,7 @@
 import { showToast } from '../components/toast.js';
 import { confirmModal } from '../components/modal.js';
 import { openSpotifyCredentialsModal } from './spotify-credentials-modal.js';
+import { watchUpdates, updateText, bindUpdateButton } from '../components/updates.js';
 
 export async function render(section) {
   const [settings, version, spotifyState, creds] = await Promise.all([
@@ -81,6 +82,14 @@ export async function render(section) {
     <div class="card">
       <h3 class="card-title">About</h3>
       <p class="help-text">MVLP v${version} — connects iPixel LED panels to Multiviewer for F1 and Spotify.</p>
+      ${toggleRow('update-toggle', 'Check for updates', 'Look for a new version on GitHub at launch and every few hours.', settings.autoUpdateCheck !== false)}
+      <div class="row-between">
+        <div class="row-label"><strong>Updates</strong><span id="update-status">Not checked yet.</span></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-primary" id="update-action-btn" hidden></button>
+          <button class="btn btn-sm" id="update-check-btn">Check now</button>
+        </div>
+      </div>
       <div style="display:flex;gap:10px;">
         <button class="btn btn-sm" id="link-repo">GitHub Repository</button>
         <button class="btn btn-sm" id="link-mv">Multiviewer</button>
@@ -114,6 +123,20 @@ export async function render(section) {
   const level = section.querySelector('#night-level');
   level.addEventListener('input', () => { section.querySelector('#night-level-label').textContent = `${level.value}%`; });
   level.addEventListener('change', () => window.mvlp.invoke('config:setSetting', 'nightBrightness', Number(level.value)));
+
+  bindToggle(section, 'update-toggle', 'autoUpdateCheck');
+  const statusEl = section.querySelector('#update-status');
+  const actionBtn = section.querySelector('#update-action-btn');
+  const checkBtn = section.querySelector('#update-check-btn');
+  const unwatch = watchUpdates((s) => {
+    if (!statusEl.isConnected) { unwatch(); return; }
+    statusEl.textContent = updateText(s) || `Version ${s.currentVersion}. ${s.checkedAt ? 'Up to date.' : 'Not checked yet.'}`;
+    bindUpdateButton(actionBtn, s);
+    if (s.status === 'downloading') actionBtn.hidden = true;
+    checkBtn.disabled = ['checking', 'downloading'].includes(s.status);
+  });
+  actionBtn.addEventListener('click', () => window.mvlp.invoke(actionBtn.dataset.action));
+  checkBtn.addEventListener('click', () => window.mvlp.invoke('updater:check'));
 
   section.querySelector('#spotify-edit-btn').addEventListener('click', () => {
     openSpotifyCredentialsModal({ clientId: creds.clientId, onSaved: () => render(section) });

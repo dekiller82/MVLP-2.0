@@ -18,6 +18,7 @@ const store = new Store({
       fullSectorYellows: false,
       startupAnimation: true,
       yellowDisplay: 'number',
+      autoUpdateCheck: true,
       idleEnabled: true,
       idleNextRace: true,
       idleLastPodium: true,

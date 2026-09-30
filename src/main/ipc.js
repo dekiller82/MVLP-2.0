@@ -38,6 +38,7 @@ function registerIpc({ mainWindow, bleBridge, controller, updater }) {
     notify('Connection failed', message || id);
   });
   controller.on('mv:status', (state) => send('mv:status', state));
+  controller.on('integrations', () => send('integrations:changed'));
   controller.on('mv:action', (action) => send('mv:action', action));
   controller.on('spotify:status', (status) => {
     send('spotify:status', status);

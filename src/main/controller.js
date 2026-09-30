@@ -203,6 +203,7 @@ class AppController extends EventEmitter {
   setMultiviewerEnabled(enabled) {
     this.mvEnabled = enabled;
     store.setSetting('mvEnabled', enabled);
+    this.emit('integrations');
     if (enabled) {
       this.mv.start();
     } else {
@@ -777,6 +778,7 @@ class AppController extends EventEmitter {
   async setSpotifyEnabled(enabled, clientId, clientSecret) {
     this.spotifyEnabled = enabled;
     store.setSetting('spotifyEnabled', enabled);
+    this.emit('integrations');
     if (enabled) {
       await this.spotify.start(clientId, clientSecret);
     } else {

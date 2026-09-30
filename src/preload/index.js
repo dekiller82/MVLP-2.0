@@ -17,7 +17,7 @@ const INVOKE_CHANNELS = new Set([
 const EVENT_CHANNELS = new Set([
   'ble:chooserDevices',
   'device:connected', 'device:disconnected', 'device:connect-failed',
-  'mv:status', 'mv:action', 'spotify:status', 'log:entry', 'updater:state',
+  'mv:status', 'mv:action', 'spotify:status', 'log:entry', 'updater:state', 'integrations:changed',
 ]);
 
 contextBridge.exposeInMainWorld('mvlp', {

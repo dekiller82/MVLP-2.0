@@ -142,6 +142,11 @@ export async function render(section) {
   unsubscribers.push(window.mvlp.on('mv:status', (state) => setMvBadge(section, state)));
   unsubscribers.push(window.mvlp.on('mv:action', (action) => setFlag(section, action)));
   unsubscribers.push(window.mvlp.on('spotify:status', (status) => setSpotifyBadge(section, status.state, status.message)));
+  // The tray menu can switch an integration too; redraw so the toggles match.
+  unsubscribers.push(window.mvlp.on('integrations:changed', () => {
+    if (section.hidden) return;
+    render(section);
+  }));
   unsubscribers.push(window.mvlp.on('device:connected', () => refreshDevicesSummary(section)));
   unsubscribers.push(window.mvlp.on('device:disconnected', () => refreshDevicesSummary(section)));
 }

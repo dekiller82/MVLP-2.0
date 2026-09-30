@@ -90,6 +90,26 @@ app.whenReady().then(() => {
 
   registerIpc({ mainWindow, bleBridge, controller, updater });
 
+  // The tray menu's ticks follow the real state, whoever changed it (the tray, the dashboard or startup).
+  const refreshTrayMenu = () => tray.updateMenu({
+    mvEnabled: controller.mvEnabled,
+    spotifyEnabled: controller.spotifyEnabled,
+    onToggleMv: (on) => controller.setMultiviewerEnabled(on),
+    onToggleSpotify: (on) => {
+      const creds = store.getSpotifyCredentials();
+      if (on && !(creds.clientId && creds.clientSecret)) {
+        // Spotify needs its credentials first: the dashboard has the form.
+        mainWindow.show();
+        mainWindow.focus();
+        refreshTrayMenu();
+        return;
+      }
+      controller.setSpotifyEnabled(on, creds.clientId, creds.clientSecret).catch(() => {});
+    },
+  });
+  controller.on('integrations', refreshTrayMenu);
+  refreshTrayMenu();
+
   controller.on('mv:status', (state) => tray.setStatus(state === 'connected' ? 'connected' : state === 'retrying' ? 'warning' : 'idle'));
 
   const settings = store.getSettings();

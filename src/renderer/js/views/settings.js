@@ -30,6 +30,7 @@ export async function render(section) {
     <div class="card">
       <h3 class="card-title">Startup &amp; Behavior</h3>
       ${toggleRow('launch-toggle', 'Launch at login', 'Start MVLP automatically when you sign in.', settings.launchAtLogin)}
+      <div id="start-tray-row" ${settings.launchAtLogin ? '' : 'hidden'}>${toggleRow('start-tray-toggle', 'Start in tray', 'When MVLP starts at login, stay in the tray instead of opening the window.', settings.startMinimized)}</div>
       ${toggleRow('tray-toggle', 'Minimize to tray on close', 'Keep running in the background instead of quitting.', settings.minimizeToTray)}
       ${toggleRow('startup-toggle', 'Startup animation', 'Play a short animation on a panel when it connects.', settings.startupAnimation !== false)}
       ${toggleRow('notif-toggle', 'Desktop notifications', 'Notify on connects, disconnects and errors.', settings.notifications)}
@@ -103,6 +104,10 @@ export async function render(section) {
   });
 
   bindToggle(section, 'launch-toggle', 'launchAtLogin');
+  section.querySelector('#launch-toggle').addEventListener('change', (e) => {
+    section.querySelector('#start-tray-row').hidden = !e.target.checked;
+  });
+  bindToggle(section, 'start-tray-toggle', 'startMinimized');
   bindToggle(section, 'tray-toggle', 'minimizeToTray');
   bindToggle(section, 'startup-toggle', 'startupAnimation');
   section.querySelector('#yellow-display-select').addEventListener('change', (e) => {

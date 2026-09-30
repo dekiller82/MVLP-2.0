@@ -137,7 +137,7 @@ You can also disconnect, reconnect, erase all buffers, or remove a panel (which 
 
 ### Settings
 
-Theme, launch at login, minimize to tray, the startup animation, desktop notifications, the yellow flag options, and Spotify credentials. The full list is in the [Settings reference](#settings-reference).
+Theme, launch at login (and whether that start stays in the tray), minimize to tray, the startup animation, desktop notifications, the yellow flag options, and Spotify credentials. The full list is in the [Settings reference](#settings-reference).
 
 <p align="center"><img src="docs/screenshots/settings-idle.png" alt="Idle screens and night dimming in Settings" width="720"></p>
 
@@ -348,7 +348,8 @@ Bluetooth is handled entirely in the main process with [`@stoprocent/noble`](htt
 | Setting | Default | Where | Description |
 | --- | --- | --- | --- |
 | Theme | Dark | Settings | Dark or light. |
-| Launch at login | Off | Settings | Start MVLP when you sign in (Windows and macOS). |
+| Launch at login | Off | Settings | Start MVLP when you sign in (Windows, macOS and Linux; installed builds only). |
+| Start in tray | Off | Settings | Shown when launch at login is on. A start at login stays in the tray instead of opening the window; starting MVLP yourself always opens it. |
 | Minimize to tray on close | On | Settings | Closing the window keeps the app running in the tray. |
 | Startup animation | On | Settings | Play the scan-line animation when a panel connects. |
 | Desktop notifications | On | Settings | Notify on connects, disconnects and errors. |

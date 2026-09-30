@@ -36,7 +36,7 @@ function createWindow() {
     height: 760,
     minWidth: 860,
     minHeight: 600,
-    show: !settings.startMinimized,
+    show: !(settings.launchAtLogin && settings.startMinimized && autolaunch.wasLaunchedAtLogin()), // "start in tray" applies to login starts only
     backgroundColor: '#111318',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', '..', 'build', 'icon.png'),

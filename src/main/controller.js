@@ -326,9 +326,11 @@ class AppController extends EventEmitter {
       custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
     } else if (kind === 'text-big' || kind === 'text-small') {
       // The panel's own text mode: it scrolls the text itself. Experimental.
-      const text = String(arg || 'MAX WINS');
+      // "MAX WINS @40" sets the speed (0 to 100); without it the panel's fastest setting is used.
+      const [, text = 'MAX WINS', speedText] = /^(.*?)\s*(?:@\s*(\d+))?\s*$/.exec(String(arg || '')) || [];
+      const speed = speedText === undefined ? 100 : Math.min(100, Number(speedText));
       holdMs = 20000;
-      await Promise.allSettled(targets.map((id) => this.ble.writeToDevice(id, makeTextPayloads(text, { height: kind === 'text-big' ? 32 : 16 }))));
+      await Promise.allSettled(targets.map((id) => this.ble.writeToDevice(id, makeTextPayloads(text || 'MAX WINS', { height: kind === 'text-big' ? 32 : 16, speed }))));
     } else if (kind === 'delayed') {
       custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
     } else if (kind === 'countdown') {

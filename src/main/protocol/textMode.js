@@ -2,12 +2,12 @@
 
 const { makePayload } = require('./common');
 const { crc32 } = require('./crc32');
-const { GLYPHS } = require('./font');
+const { FONT_5X7 } = require('./font5x7');
 
 /**
  * The panel's own text mode (command 0x0100), as used by pypixelcolor. The panel does the scrolling
  * itself: it is sent one bitmap per character (a fixed-width cell as tall as the panel or half of it),
- * plus the colour, animation and speed. Glyphs here come from the app's own 3x5 font, scaled up.
+ * plus the colour, animation and speed. Glyphs here come from the app's own 5x7 font, stretched to fill the cell.
  *
  * Layout of the data, after the command:
  *   option (0 first window, 2 after) | total size u32 | crc32 u32 | 0x00 | save slot | chunk
@@ -28,20 +28,21 @@ const reverseBits = (byte) => {
 function characterBlock(char, cellHeight, color) {
   const big = cellHeight >= 32;
   const cellWidth = big ? 16 : 8;
-  const scale = big ? 4 : 2;
-  const glyph = GLYPHS[char];
-  const top = Math.floor((cellHeight - 5 * scale) / 2);
-  const left = big ? 2 : 1;
+  const scaleX = big ? 3 : 1; // 15x28 in a 16x32 cell, or 5x14 in an 8x16 cell
+  const scaleY = big ? 4 : 2;
+  const glyph = FONT_5X7[char];
+  const top = Math.floor((cellHeight - 7 * scaleY) / 2);
+  const left = big ? 0 : 1;
   const bytesPerRow = cellWidth / 8;
   const rows = Buffer.alloc(cellHeight * bytesPerRow);
   if (glyph) {
-    for (let gy = 0; gy < 5; gy++) {
-      for (let gx = 0; gx < 3; gx++) {
+    for (let gy = 0; gy < 7; gy++) {
+      for (let gx = 0; gx < 5; gx++) {
         if (glyph[gy][gx] !== '#') continue;
-        for (let dy = 0; dy < scale; dy++) {
-          for (let dx = 0; dx < scale; dx++) {
-            const x = left + gx * scale + dx;
-            const y = top + gy * scale + dy;
+        for (let dy = 0; dy < scaleY; dy++) {
+          for (let dx = 0; dx < scaleX; dx++) {
+            const x = left + gx * scaleX + dx;
+            const y = top + gy * scaleY + dy;
             const bit = cellWidth - 1 - x; // leftmost pixel is the most significant bit
             rows[y * bytesPerRow + (bytesPerRow - 1 - (bit >> 3))] |= 1 << (bit & 7);
           }
@@ -54,14 +55,14 @@ function characterBlock(char, cellHeight, color) {
 }
 
 /**
- * @param text       what to show (upper case letters and digits; anything else is a blank)
+ * @param text       what to show (upper case letters, digits and . , - ! ? : / '; anything else is a blank)
  * @param opts.height    32 for full-height characters, 16 for half-height
  * @param opts.animation a key of ANIMATIONS
  * @param opts.speed     0 to 100
  * @param opts.color     [r, g, b]
  * @returns the payloads to write to the panel
  */
-function makeTextPayloads(text, { height = 32, animation = 'scroll-left', speed = 80, color = [255, 255, 255], rainbow = 0, slot = 0 } = {}) {
+function makeTextPayloads(text, { height = 32, animation = 'scroll-left', speed = 100, color = [255, 255, 255], rainbow = 0, slot = 0 } = {}) {
   const chars = String(text).toUpperCase().slice(0, 100).split('');
   if (!chars.length) throw new Error('There is no text to send.');
   if (!(animation in ANIMATIONS)) throw new Error(`Unknown text animation "${animation}".`);

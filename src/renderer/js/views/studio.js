@@ -121,7 +121,7 @@ const TEST_EFFECTS = [
   { kind: 'idle-next', label: 'Idle: next race', hint: 'The next circuit with a countdown, then the date. Needs internet the first time.' },
   { kind: 'idle-podium', label: 'Idle: last podium', hint: "The last race's podium." },
   { kind: 'idle-standings', label: 'Idle: standings', hint: 'Top three drivers, then top three teams.' },
-  { kind: 'text-big', label: 'Text: full height', hint: "Scrolling text in the panel's own text mode, letters as tall as the panel. Letters and digits only.", input: { type: 'text', value: 'MAX WINS', title: 'Text to scroll' } },
+  { kind: 'text-big', label: 'Text: full height', hint: "Scrolling text in the panel's own text mode, letters as tall as the panel. Add @ and a speed 0-100 to set the speed, e.g. MAX WINS @40.", input: { type: 'text', value: 'MAX WINS', title: 'Text to scroll' } },
   { kind: 'text-small', label: 'Text: half height', hint: "The same with letters half as tall.", input: { type: 'text', value: 'MAX WINS', title: 'Text to scroll' } },
   { kind: 'startup', label: 'Startup animation', hint: 'What plays when a panel connects.' },
 ];

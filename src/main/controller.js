@@ -13,6 +13,7 @@ const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('./pro
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('./protocol/countdownGif');
 const { makeYellowMap } = require('./protocol/trackMapGif');
 const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('./protocol/resultGifs');
+const { makeTextPayloads } = require('./protocol/textMode');
 const { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif } = require('./protocol/idleScreens');
 const { IdleData } = require('./idleData');
 const { MultiviewerPoller } = require('./multiviewer');
@@ -323,6 +324,11 @@ class AppController extends EventEmitter {
       if (!screen) return -1;
       holdMs = 12000;
       custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
+    } else if (kind === 'text-big' || kind === 'text-small') {
+      // The panel's own text mode: it scrolls the text itself. Experimental.
+      const text = String(arg || 'MAX WINS');
+      holdMs = 20000;
+      await Promise.allSettled(targets.map((id) => this.ble.writeToDevice(id, makeTextPayloads(text, { height: kind === 'text-big' ? 32 : 16 }))));
     } else if (kind === 'delayed') {
       custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
     } else if (kind === 'countdown') {

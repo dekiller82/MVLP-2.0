@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Procedurally draws the MVLP app icon and tray icons as flat PNG files.
+ * Procedurally draws the MVLP app icon (an LED panel with an M) and the tray icons as PNG files.
  * Pure-JS (Jimp) - no native/canvas dependencies, so it runs identically
  * on Windows, macOS and Linux build machines.
  *
@@ -10,11 +10,8 @@
 const path = require('path');
 const fs = require('fs');
 const Jimp = require('jimp');
+const { FONT_5X7 } = require('../src/main/protocol/font5x7');
 
-const BG = Jimp.rgbaToInt(17, 19, 24, 255); // #111318
-const RED = Jimp.rgbaToInt(220, 53, 69, 255); // #dc3545 (brand accent)
-const RED_DIM = Jimp.rgbaToInt(120, 30, 40, 255);
-const LIGHT = Jimp.rgbaToInt(240, 242, 245, 255);
 const TRANSPARENT = 0x00000000;
 
 function roundedMask(w, h, radius) {
@@ -32,67 +29,57 @@ function roundedMask(w, h, radius) {
   };
 }
 
+// The icon: a red tile carrying an LED panel with an "M" lit on it. Lit LEDs are white round bulbs,
+// unlit ones are a deeper red, so it reads as a light panel at large sizes and as a white M when tiny.
+const GRID = 9;
+const M_GLYPH = FONT_5X7.M;
+const isLit = (x, y) => {
+  const gx = x - 2;
+  const gy = y - 1;
+  return gy >= 0 && gy < 7 && gx >= 0 && gx < 5 && M_GLYPH[gy][gx] === '#';
+};
+const mix = (a, b, t) => a.map((v, i) => Math.round(v * (1 - t) + b[i] * t));
+
 async function drawIcon(size) {
   const img = new Jimp(size, size, TRANSPARENT);
-  const radius = size * 0.22;
-  const mask = roundedMask(size, size, radius);
+  const tileMask = roundedMask(size, size, size * 0.22);
+  const pad = 0.13;
+  const off = size * pad;
+  const cell = (size * (1 - 2 * pad)) / GRID;
+  const bulb = cell * 0.4;
+  const BULB_LIT = [255, 250, 245];
+  const BULB_UNLIT = [150, 24, 42];
+  const BULB_SHADE = [128, 18, 34];
 
   img.scan(0, 0, size, size, function (x, y, idx) {
-    const a = mask(x, y);
-    if (a <= 0) return;
-    const bg = Jimp.intToRGBA(BG);
-    this.bitmap.data[idx + 0] = bg.r;
-    this.bitmap.data[idx + 1] = bg.g;
-    this.bitmap.data[idx + 2] = bg.b;
-    this.bitmap.data[idx + 3] = Math.round(255 * a);
-  });
+    const alpha = tileMask(x, y);
+    if (alpha <= 0) return;
+    // Tile: red, a little lighter at the top left and darker at the bottom right.
+    let col = mix([232, 52, 72], [176, 26, 44], (x + y) / (2 * size));
 
-  // Checkered-flag glyph made of a 4x4 grid of rounded squares, centered.
-  const grid = 4;
-  const pad = size * 0.22;
-  const inner = size - pad * 2;
-  const cell = inner / grid;
-  const cellPad = cell * 0.14;
-  const cellRadius = (cell - cellPad * 2) * 0.22;
-
-  for (let gy = 0; gy < grid; gy++) {
-    for (let gx = 0; gx < grid; gx++) {
-      const isRed = (gx + gy) % 2 === 0;
-      const color = isRed ? RED : LIGHT;
-      const x0 = pad + gx * cell + cellPad;
-      const y0 = pad + gy * cell + cellPad;
-      const w = cell - cellPad * 2;
-      const h = cell - cellPad * 2;
-      const cellMask = roundedMask(Math.ceil(w), Math.ceil(h), cellRadius);
-      const rgba = Jimp.intToRGBA(color);
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const a = cellMask(x, y);
-          if (a <= 0) continue;
-          const px = Math.round(x0 + x);
-          const py = Math.round(y0 + y);
-          if (px < 0 || py < 0 || px >= size || py >= size) continue;
-          const idx = (py * size + px) * 4;
-          img.bitmap.data[idx + 0] = rgba.r;
-          img.bitmap.data[idx + 1] = rgba.g;
-          img.bitmap.data[idx + 2] = rgba.b;
-          img.bitmap.data[idx + 3] = Math.round(255 * a);
+    const gx = Math.floor((x - off) / cell);
+    const gy = Math.floor((y - off) / cell);
+    if (gx >= 0 && gy >= 0 && gx < GRID && gy < GRID) {
+      const cx = off + (gx + 0.5) * cell;
+      const cy = off + (gy + 0.5) * cell;
+      const cover = Math.max(0, Math.min(1, bulb - Math.hypot(x - cx, y - cy) + 0.5));
+      if (cover > 0) {
+        // A small highlight toward the top left of each bulb makes it look round.
+        const highlight = Math.max(0, 1 - Math.hypot(x - (cx - bulb * 0.3), y - (cy - bulb * 0.3)) / bulb);
+        let bulbColor;
+        if (isLit(gx, gy)) bulbColor = mix(BULB_LIT, [255, 255, 255], highlight * 0.6);
+        else {
+          const shade = Math.max(0, 1 - Math.hypot(x - (cx - bulb * 0.3), y - (cy - bulb * 0.3)) / (bulb * 1.3));
+          bulbColor = mix(BULB_UNLIT, BULB_SHADE, 0.5 - shade * 0.3);
         }
+        col = mix(col, bulbColor, cover);
       }
     }
-  }
-
-  // Thin accent ring near the border for depth.
-  const ringMask = roundedMask(size, size, radius);
-  const ringWidth = Math.max(2, size * 0.012);
-  img.scan(0, 0, size, size, function (x, y, idx) {
-    const distFromEdge = Math.min(x, y, size - 1 - x, size - 1 - y);
-    if (distFromEdge < ringWidth && ringMask(x, y) > 0.5) {
-      const rgba = Jimp.intToRGBA(RED_DIM);
-      this.bitmap.data[idx + 0] = rgba.r;
-      this.bitmap.data[idx + 1] = rgba.g;
-      this.bitmap.data[idx + 2] = rgba.b;
-    }
+    const d = this.bitmap.data;
+    d[idx + 0] = col[0];
+    d[idx + 1] = col[1];
+    d[idx + 2] = col[2];
+    d[idx + 3] = Math.round(255 * alpha);
   });
 
   return img;

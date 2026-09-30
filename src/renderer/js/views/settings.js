@@ -64,7 +64,7 @@ export async function render(section) {
       </div>
       <div class="row-between">
         <div class="row-label"><strong>Night brightness</strong><span id="night-level-label">${settings.nightBrightness ?? 20}%</span></div>
-        <input type="range" id="night-level" min="1" max="100" value="${settings.nightBrightness ?? 20}" />
+        <input type="range" id="night-level" style="width:240px" min="1" max="100" value="${settings.nightBrightness ?? 20}" />
       </div>
     </div>
 

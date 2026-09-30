@@ -97,6 +97,8 @@ Next time you start MVLP, panels you have connected before reconnect automatical
 
 The dashboard shows the state of both integrations, the flag or status currently being shown, the connected panels, and a few quick actions (send the clock to every panel, erase every buffer).
 
+<p align="center"><img src="docs/screenshots/dashboard.png" alt="The Dashboard" width="720"></p>
+
 ### Devices
 
 Each panel gets a card with its connection state and its settings:
@@ -113,6 +115,8 @@ Each panel gets a card with its connection state and its settings:
 
 You can also disconnect, reconnect, erase all buffers, or remove a panel (which forgets its settings).
 
+<p align="center"><img src="docs/screenshots/devices.png" alt="A panel card on the Devices tab" width="720"></p>
+
 ### Studio
 
 - **Quick Send**: one click sends any bundled animation (flags, rain, pit graphics, the Multiviewer logo and more) to every connected panel.
@@ -121,9 +125,15 @@ You can also disconnect, reconnect, erase all buffers, or remove a panel (which 
 - **Expert command**: send a raw hex payload straight to a panel.
 - **Danger zone**: erase every buffer on every panel.
 
+<p align="center"><img src="docs/screenshots/studio.png" alt="The Studio" width="720"></p>
+
 ### Settings
 
 Theme, launch at login, minimize to tray, the startup animation, desktop notifications, the yellow flag options, and Spotify credentials. The full list is in the [Settings reference](#settings-reference).
+
+<p align="center"><img src="docs/screenshots/settings-idle.png" alt="Idle screens and night dimming in Settings" width="720"></p>
+
+<p align="center"><sub>The screenshots were taken with a placeholder panel that is not connected. Yours will show its own name and status.</sub></p>
 
 ### Tray and notifications
 

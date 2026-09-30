@@ -322,7 +322,8 @@ When Multiviewer has no live session and Spotify is not playing, the panel rotat
 </p>
 <p align="center"><sub>Next race, last podium, standings</sub></p>
 
-- **Next race.** The circuit outline with the time to go ("4D 7H", "5H 30M", "45M", "NOW"), then the country code and the date. A race counts as still on for three hours after its start. A circuit without an outline in the bundled set gets a single page of code, countdown and date.
+- **Next race.** The circuit outline with the time to go ("4D 7H", "5H30M", "45M", "NOW"), then the country code and the date. A race counts as still on for three hours after its start. A circuit without an outline in the bundled set gets a single page of code, countdown and date.
+- **Lettering.** The next race and podium title screens use a 5x7 pixel font that is easier to read than the 3x5 one used on the driver screens. The standings keep the smaller font because three columns of text do not fit at 5x7 on a 32 pixel wide panel.
 - **Last podium.** "LAST" and the country code, then the podium of the last race in team colors.
 - **Standings.** The top three drivers with their points, then the top three teams.
 - **Data.** It comes from the free [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the community successor to Ergast), not from Multiviewer. Results and standings are refreshed at most every 6 hours and the calendar every 12, so a running app makes a handful of requests a day, one at a time. Everything is cached on disk, so the screens work offline after the first fetch, and failures back off (15 seconds, 1 minute, then every 5 minutes) while the old copy keeps being used. Only the public F1 data is requested; nothing about you is sent.

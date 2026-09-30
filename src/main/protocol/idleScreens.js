@@ -1,6 +1,7 @@
 'use strict';
 
 const { hexToRgb, toolkit } = require('./resultGifs');
+const { FONT_5X7 } = require('./font5x7');
 
 const { newCanvas, fillRect, drawText, drawCentered, textWidth, textStyleFor, frameOf, encode, drawPodium } = toolkit;
 
@@ -43,6 +44,41 @@ function drawFitted(c, text, maxScale, top, rgb = WHITE, outline = null) {
   while (scale > 1 && textWidth(text, scale, 1) + 2 > c.width) scale--;
   drawCentered(c, text, scale, c.width / 2, top, rgb, outline);
   return scale;
+}
+
+/** Width of `text` in the 5x7 font: 5 columns per letter, 1 column between, a narrower gap for spaces. */
+function width57(text, sx) {
+  let w = 0;
+  for (const ch of text) w += ch === ' ' ? 3 * sx : 5 * sx + sx;
+  return Math.max(0, w - sx);
+}
+
+/**
+ * Text in the 5x7 font, centred and stretched (`sx` across, `sy` down). Falls back to nothing for
+ * characters the font lacks. Returns false, drawing nothing, if it would not fit.
+ */
+function drawText57(c, text, sx, sy, top, rgb = WHITE) {
+  const w = width57(text, sx);
+  if (w > c.width - 2) return false;
+  let x = Math.round((c.width - w) / 2);
+  for (const ch of text) {
+    if (ch === ' ') { x += 3 * sx; continue; }
+    const glyph = FONT_5X7[ch];
+    if (glyph) {
+      for (let gy = 0; gy < 7; gy++) {
+        for (let gx = 0; gx < 5; gx++) if (glyph[gy][gx] === '#') fillRect(c, x + gx * sx, top + gy * sy, sx, sy, rgb);
+      }
+    }
+    x += 5 * sx + sx;
+  }
+  return true;
+}
+
+/** 5x7 text if it fits (dropping spaces if that helps), else the smaller 3x5 font. `top` is the row of the top of the letters. */
+function drawLabel(c, text, top, rgb = WHITE, sy = 1) {
+  if (drawText57(c, text, 1, sy, top, rgb)) return;
+  if (drawText57(c, text.replace(/ /g, ''), 1, sy, top, rgb)) return; // "5H 30M" as "5H30M" when the space does not fit
+  drawFitted(c, text, 1, top, rgb);
 }
 
 // ---- next race: the circuit and a countdown ------------------------------------------------------
@@ -92,23 +128,23 @@ function makeNextRaceGif({ race, outline }, width, height) {
 
   const codePage = () => {
     const c = newCanvas(width, height);
-    drawFitted(c, race.code, 3 * small, Math.round(height * 0.16), MEDAL_GOLD);
-    drawFitted(c, date, small, Math.round(height * 0.66));
+    drawLabel(c, race.code, Math.round(height * 0.12), MEDAL_GOLD, 2 * small);
+    drawLabel(c, date, Math.round(height * 0.69));
     return c;
   };
 
   if (outline) {
     const a = newCanvas(width, height);
     const margin = 2 * small;
-    drawOutline(a, outline, { x: margin, y: margin, w: width - 2 * margin, h: Math.round(height * 0.68) }, OUTLINE_GREY);
-    drawFitted(a, countdown, small, height - 5 * small - Math.round(height * 0.1));
+    drawOutline(a, outline, { x: margin, y: margin, w: width - 2 * margin, h: Math.round(height * 0.62) }, OUTLINE_GREY);
+    drawLabel(a, countdown, height - 8 * small);
     frames.push(frameOf(a, PAGE_MS.nextMap));
     frames.push(frameOf(codePage(), FINAL_HOLD_MS));
   } else {
     const c = newCanvas(width, height);
-    drawFitted(c, race.code, 3 * small, small, MEDAL_GOLD);
-    drawFitted(c, countdown, small, 18 * small, OUTLINE_GREY);
-    drawFitted(c, date, small, 25 * small);
+    drawLabel(c, race.code, small, MEDAL_GOLD, 2 * small);
+    drawLabel(c, countdown, 17 * small, OUTLINE_GREY);
+    drawLabel(c, date, 25 * small);
     frames.push(frameOf(c, FINAL_HOLD_MS));
   }
   return encode(width, height, frames);
@@ -120,8 +156,8 @@ function makeNextRaceGif({ race, outline }, width, height) {
 function makeLastPodiumGif({ code, podium }, width, height) {
   const small = Math.max(1, Math.floor(height / 32));
   const title = newCanvas(width, height);
-  drawFitted(title, 'LAST', small, Math.round(height * 0.16), OUTLINE_GREY);
-  drawFitted(title, code, 3 * small, Math.round(height * 0.4), MEDAL_GOLD);
+  drawLabel(title, 'LAST', Math.round(height * 0.14), OUTLINE_GREY);
+  drawLabel(title, code, Math.round(height * 0.45), MEDAL_GOLD, 2 * small);
 
   const page = newCanvas(width, height);
   drawPodium(page, podium, width, height);

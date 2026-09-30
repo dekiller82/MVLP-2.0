@@ -3,6 +3,7 @@
 import { showToast } from '../components/toast.js';
 import { confirmModal } from '../components/modal.js';
 import { openSpotifyCredentialsModal } from './spotify-credentials-modal.js';
+import { showWhatsNew } from '../components/whatsnew.js';
 import { watchUpdates, updateText, bindUpdateButton } from '../components/updates.js';
 
 export async function render(section) {
@@ -93,6 +94,7 @@ export async function render(section) {
         </div>
       </div>
       <div style="display:flex;gap:10px;">
+        <button class="btn btn-sm" id="whatsnew-btn">What's new</button>
         <button class="btn btn-sm" id="copy-diagnostics" title="Copies versions, settings, panel state and the recent activity log. Check it before posting it publicly.">Copy diagnostics</button>
         <button class="btn btn-sm" id="link-repo">GitHub Repository</button>
         <button class="btn btn-sm" id="link-mv">Multiviewer</button>
@@ -154,6 +156,9 @@ export async function render(section) {
     render(section);
   });
 
+  section.querySelector('#whatsnew-btn').addEventListener('click', async () => {
+    showWhatsNew(await window.mvlp.invoke('whatsnew:latest'), { title: "What's new" });
+  });
   section.querySelector('#copy-diagnostics').addEventListener('click', async () => {
     await window.mvlp.invoke('app:copyDiagnostics');
     showToast('Diagnostics copied. Paste them into your bug report.', 'success', 3000);

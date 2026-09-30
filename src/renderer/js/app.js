@@ -8,6 +8,7 @@ import * as studio from './views/studio.js';
 import * as settingsView from './views/settings.js';
 import { renderOnboarding } from './views/onboarding.js';
 import { initUpdates, setupUpdateBanner } from './components/updates.js';
+import { showWhatsNew } from './components/whatsnew.js';
 import { escapeHtml } from './util.js';
 
 const views = {
@@ -103,6 +104,10 @@ async function bootstrap() {
   const settings = await window.mvlp.invoke('config:getSettings');
 
   showView('dashboard');
+
+  // After an update: say what changed. (Main also records the version here, whether or not there is anything to show.)
+  const updatedFrom = await window.mvlp.invoke('whatsnew:pending');
+  if (updatedFrom.length) showWhatsNew(updatedFrom, { title: 'MVLP was updated' });
 
   if (!settings.onboardingComplete) {
     renderOnboarding(document.getElementById('onboarding-root'), {

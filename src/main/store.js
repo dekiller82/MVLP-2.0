@@ -19,6 +19,7 @@ const store = new Store({
       startupAnimation: true,
       yellowDisplay: 'number',
       autoUpdateCheck: true,
+      lastSeenVersion: '',
       idleEnabled: true,
       idleNextRace: true,
       idleSchedule: true,

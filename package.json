@@ -43,6 +43,7 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "CHANGELOG.md",
       "package.json"
     ],
     "asarUnpack": [

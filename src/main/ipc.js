@@ -8,6 +8,7 @@ const logger = require('./logger');
 const autolaunch = require('./autolaunch');
 const { REPO } = require('./updater');
 const { buildDiagnostics } = require('./diagnostics');
+const whatsnew = require('./whatsnew');
 
 function notify(title, body) {
   if (!store.getSettings().notifications) return;
@@ -119,6 +120,18 @@ function registerIpc({ mainWindow, bleBridge, controller, updater }) {
     return result.canceled ? [] : result.filePaths;
   });
   ipcMain.handle('app:getVersion', () => app.getVersion());
+  // What's new: the entries for the versions skipped since the last run. Existing users of a version that
+  // did not record this (2.0.2 and earlier) count as coming from 2.0.0; a first install shows nothing.
+  ipcMain.handle('whatsnew:pending', () => {
+    if (!app.isPackaged) return [];
+    const current = app.getVersion();
+    const settings = store.getSettings();
+    const last = settings.lastSeenVersion || '';
+    store.setSetting('lastSeenVersion', current);
+    if (last === current || !settings.onboardingComplete) return [];
+    return whatsnew.entriesSince(whatsnew.readEntries(), last || '2.0.0', current);
+  });
+  ipcMain.handle('whatsnew:latest', () => whatsnew.latestEntries(whatsnew.readEntries(), app.getVersion()));
   ipcMain.handle('app:copyDiagnostics', () => {
     clipboard.writeText(buildDiagnostics({ controller, updater, bleBridge }));
     return true;

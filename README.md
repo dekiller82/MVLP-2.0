@@ -449,6 +449,7 @@ MVLP looks at this repository's latest GitHub release at launch and every 6 hour
 
 - **Windows (installer) and Linux (AppImage):** the button says **Update now**. It downloads the update in the background with a progress percentage, then **Restart and install** replaces the app and starts the new version.
 - **macOS and the Linux `.deb`:** the button says **Download from GitHub** and opens the release page. macOS cannot replace an app that is not code-signed, and a `.deb` belongs to the package manager.
+- **What's new.** The first time MVLP starts after an update, a window lists what changed in every version you skipped, taken from [CHANGELOG.md](CHANGELOG.md), which ships inside the app. **Settings, About, What's new** shows the latest entries any time. A fresh install shows nothing.
 - Only the version number and release page are requested from GitHub; nothing about you is sent. Running from source never checks.
 
 ## Diagnostics and the panel clock

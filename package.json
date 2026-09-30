@@ -113,7 +113,8 @@
       "provider": "github",
       "owner": "dekiller82",
       "repo": "MVLP-2.0"
-    }
+    },
+    "npmRebuild": false
   },
   "repository": {
     "type": "git",

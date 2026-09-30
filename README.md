@@ -71,7 +71,15 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 
 ## Quick start
 
-**Installers.** Download the latest installer for your system from the [Releases page](https://github.com/dekiller82/MVLP-2.0/releases/latest): a Windows setup `.exe`, a macOS `.dmg` (Intel or Apple silicon) or a Linux AppImage or `.deb`. The builds are not code-signed, so Windows SmartScreen shows a warning (More info, Run anyway) and macOS needs a right click, Open the first time.
+**Installers.** Download the latest installer for your system from the [Releases page](https://github.com/dekiller82/MVLP-2.0/releases/latest): a Windows setup `.exe`, a macOS `.dmg` (Intel or Apple silicon) or a Linux AppImage or `.deb`. The builds are not code-signed, so Windows SmartScreen shows a warning (More info, Run anyway), and macOS needs one extra step (below).
+
+**macOS install steps.** The app is not signed with a paid Apple Developer ID, so Gatekeeper refuses to open it straight after downloading, usually with a message that the file "is damaged and can't be opened". It is not damaged; that is Gatekeeper's generic rejection of software from an unidentified developer, and newer macOS versions removed the right click, Open workaround. Clearing the quarantine flag fixes it:
+
+1. Open the `.dmg` and drag MVLP into Applications.
+2. In Terminal, run `xattr -cr "/Applications/MVLP.app"`.
+3. Launch MVLP from Applications as normal.
+
+The same step is needed after installing a new version by hand. It is also why macOS has no in-app update: the update button opens the download page instead.
 
 **From source.**
 

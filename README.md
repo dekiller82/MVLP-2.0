@@ -285,7 +285,7 @@ Details:
 - The tokens are refreshed automatically. The client secret is stored encrypted with your operating system's secure storage (Electron `safeStorage`).
 - If a panel connects after the first track was already fetched, the art is sent to it right away instead of waiting for the next song.
 - **While a live Multiviewer session is running, Spotify pauses.** Flags take over the panel. When the session ends, or you switch Multiviewer off, MVLP re-sends the current track within a few seconds.
-- Art stays up while music plays. If nothing has been playing for a minute, or a track has been paused for five minutes, the [idle screens](#idle-screens-and-night-dimming) take over; playing again brings the art straight back.
+- Art stays up while music plays. If nothing has been playing for a minute, or a track has been paused for 30 seconds, the [idle screens](#idle-screens-and-night-dimming) take over; playing again brings the art straight back.
 - If neither integration is switched on and the idle screens are off, the panel shows its clock.
 
 ## Idle screens and night dimming

@@ -15,7 +15,7 @@ const NOW_PLAYING_URL = 'https://api.spotify.com/v1/me/player/currently-playing'
 
 // How long nothing playing (or a pause) lasts before the art is given up and the idle screens may take over.
 const STOPPED_GRACE_MS = 60000;
-const PAUSED_GRACE_MS = 5 * 60000;
+const PAUSED_GRACE_MS = 30000;
 
 class SpotifyManager extends EventEmitter {
   constructor() {

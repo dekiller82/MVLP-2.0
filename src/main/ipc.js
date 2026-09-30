@@ -1,12 +1,13 @@
 'use strict';
 
 const fs = require('fs');
-const { ipcMain, dialog, shell, app, Notification } = require('electron');
+const { ipcMain, dialog, shell, app, Notification, clipboard } = require('electron');
 
 const store = require('./store');
 const logger = require('./logger');
 const autolaunch = require('./autolaunch');
 const { REPO } = require('./updater');
+const { buildDiagnostics } = require('./diagnostics');
 
 function notify(title, body) {
   if (!store.getSettings().notifications) return;
@@ -118,6 +119,10 @@ function registerIpc({ mainWindow, bleBridge, controller, updater }) {
     return result.canceled ? [] : result.filePaths;
   });
   ipcMain.handle('app:getVersion', () => app.getVersion());
+  ipcMain.handle('app:copyDiagnostics', () => {
+    clipboard.writeText(buildDiagnostics({ controller, updater, bleBridge }));
+    return true;
+  });
 
   // ---- Updates ---------------------------------------------------------------
   ipcMain.handle('updater:getState', () => updater.state);

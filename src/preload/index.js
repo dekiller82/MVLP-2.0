@@ -9,7 +9,7 @@ const INVOKE_CHANNELS = new Set([
   'ble:eraseAll', 'ble:setBrightness', 'ble:setFlip', 'ble:sendExpert', 'ble:sendGifPreset',
   'ble:listPresetGifs', 'test:effect', 'ble:sendClockToAll', 'ble:writeFiles',
   'mv:setEnabled', 'mv:getState', 'spotify:saveAndConnect', 'spotify:disconnect', 'spotify:getState',
-  'app:chooseFiles', 'app:getVersion', 'app:openExternal', 'app:getLaunchAtLogin', 'app:quit',
+  'app:chooseFiles', 'app:getVersion', 'app:copyDiagnostics', 'app:openExternal', 'app:getLaunchAtLogin', 'app:quit',
   'updater:getState', 'updater:check', 'updater:download', 'updater:install', 'updater:openRelease',
   'log:getEntries', 'debug:trace',
 ]);

@@ -2,6 +2,7 @@
 
 const { hexToRgb, toolkit } = require('./resultGifs');
 const { FONT_5X7 } = require('./font5x7');
+const { GLYPHS } = require('./font');
 
 const { newCanvas, fillRect, drawText, drawCentered, textWidth, textStyleFor, frameOf, encode, drawPodium } = toolkit;
 
@@ -11,7 +12,7 @@ const { newCanvas, fillRect, drawText, drawCentered, textWidth, textStyleFor, fr
  * panel does not loop back before the rotation moves on.
  */
 
-const PAGE_MS = { nextMap: 6000, nextInfo: 4000, title: 2500, podium: 7500, drivers: 5000, constructors: 5000 };
+const PAGE_MS = { schedule: 3500, nextMap: 6000, nextInfo: 4000, title: 2500, podium: 7500, drivers: 5000, constructors: 5000 };
 const FINAL_HOLD_MS = 30000;
 const WHITE = [255, 255, 255];
 const OUTLINE_GREY = [150, 150, 158];
@@ -150,6 +151,82 @@ function makeNextRaceGif({ race, outline }, width, height) {
   return encode(width, height, frames);
 }
 
+// ---- the race weekend's schedule ---------------------------------------------------------------------
+
+const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const SESSION_HOURS = 2; // a session counts as over this long after it starts
+const ROWS_PER_PAGE = 3;
+
+/** "12:30" in the viewer's own time zone. */
+function formatClock(startMs) {
+  const d = new Date(startMs);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * The weekend split into pages of at most three sessions, one day each (in the viewer's time zone,
+ * so a session after midnight lands on the next day). Days that are already over are left out.
+ *
+ * @param sessions [{ label, start }] with `start` in UTC milliseconds
+ * @returns [{ weekday: 'FRI', rows: [{ label: 'P1', time: '12:30', label }] }]
+ */
+function scheduleDays(sessions, now = Date.now()) {
+  const days = new Map();
+  for (const s of sessions) {
+    const d = new Date(s.start);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!days.has(key)) days.set(key, { weekday: WEEKDAYS[d.getDay()], sessions: [] });
+    days.get(key).sessions.push(s);
+  }
+  const pages = [];
+  for (const day of days.values()) {
+    if (day.sessions.every((s) => s.start + SESSION_HOURS * 3600000 < now)) continue;
+    for (let i = 0; i < day.sessions.length; i += ROWS_PER_PAGE) {
+      pages.push({ weekday: day.weekday, rows: day.sessions.slice(i, i + ROWS_PER_PAGE).map((s) => ({ label: s.label, time: formatClock(s.start) })) });
+    }
+  }
+  return pages;
+}
+
+/** Text in the small 3x5 font at a fixed pitch, with ':' drawn as two dots. Returns the width used. */
+function draw35(c, text, left, top, rgb) {
+  let x = left;
+  for (const ch of text) {
+    if (ch === ':') {
+      fillRect(c, x + 1, top + 1, 1, 1, rgb);
+      fillRect(c, x + 1, top + 3, 1, 1, rgb);
+      x += 3;
+    } else {
+      const glyph = GLYPHS[ch];
+      if (glyph) {
+        for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 3; gx++) if (glyph[gy][gx] === '#') fillRect(c, x + gx, top + gy, 1, 1, rgb);
+      }
+      x += 4;
+    }
+  }
+  return x - left - (text.endsWith(':') ? 0 : 1);
+}
+
+const width35 = (text) => [...text].reduce((w, ch) => w + (ch === ':' ? 3 : 4), 0) - (text.endsWith(':') ? 0 : 1);
+
+/** One page per day: the weekday on top, then a row per session with its label on the left and the local time on the right. */
+function makeScheduleGif({ sessions, now = Date.now() }, width, height) {
+  const pages = scheduleDays(sessions, now);
+  if (!pages.length) return null;
+  const frames = pages.map((page, i) => {
+    const c = newCanvas(width, height);
+    drawLabel(c, page.weekday, 1, MEDAL_GOLD);
+    page.rows.forEach((row, r) => {
+      const top = 11 + r * 7;
+      const color = row.label === 'R' ? MEDAL_GOLD : WHITE;
+      draw35(c, row.label, 2, top, row.label === 'R' ? MEDAL_GOLD : OUTLINE_GREY);
+      draw35(c, row.time, width - 2 - width35(row.time), top, color);
+    });
+    return frameOf(c, i === pages.length - 1 ? FINAL_HOLD_MS : PAGE_MS.schedule);
+  });
+  return encode(width, height, frames);
+}
+
 // ---- last race: the podium ----------------------------------------------------------------------
 
 /** Page 1: "LAST" and the race's country code. Page 2: the podium. */
@@ -194,4 +271,4 @@ function makeStandingsGif({ drivers, constructors }, width, height) {
   return encode(width, height, frames);
 }
 
-module.exports = { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif, formatCountdown, formatDate };
+module.exports = { makeScheduleGif, scheduleDays, makeNextRaceGif, makeLastPodiumGif, makeStandingsGif, formatCountdown, formatDate };

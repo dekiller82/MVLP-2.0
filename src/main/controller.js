@@ -14,7 +14,7 @@ const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('./protoco
 const { makeYellowMap } = require('./protocol/trackMapGif');
 const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('./protocol/resultGifs');
 const { makeTextPayloads } = require('./protocol/textMode');
-const { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif } = require('./protocol/idleScreens');
+const { makeNextRaceGif, makeScheduleGif, scheduleDays, makeLastPodiumGif, makeStandingsGif } = require('./protocol/idleScreens');
 const { IdleData } = require('./idleData');
 const { MultiviewerPoller } = require('./multiviewer');
 const { SpotifyManager } = require('./spotify');
@@ -53,8 +53,10 @@ const DEFAULT_FINISH_TIMINGS = {
 
 // The idle rotation: what the panels show when no session is live and nothing is playing.
 const IDLE_SLOT_MS = 10000; // each idle screen stays up this long
+const IDLE_SCHEDULE_DAYS = 10; // the weekend schedule joins the rotation this many days before the first session
 const IDLE_REFRESH_MS = 10 * 60000; // how often stale data is looked at (it is only fetched when past its TTL)
 const NIGHT_CHECK_MS = 60000;
+const TIME_SYNC_MS = 6 * 3600000; // how often a connected panel's clock is set again
 
 // The panel runs a countdown animation for at most this long (the last minute
 // plus a little); before that it holds a still frame that is replaced each minute.
@@ -118,6 +120,8 @@ class AppController extends EventEmitter {
     this.dimmed = false; // the panels are at night brightness
     this.nightTimer = setInterval(() => this._applyBrightness(), NIGHT_CHECK_MS);
     this.nightTimer.unref?.();
+    this.timeSyncTimer = setInterval(() => this.ble.getConnectedIds().forEach((id) => this.ble.writeToDevice(id, commands.setTime(new Date())).catch(() => {})), TIME_SYNC_MS);
+    this.timeSyncTimer.unref?.();
 
     this._wireEvents();
   }
@@ -160,6 +164,9 @@ class AppController extends EventEmitter {
     } catch (err) {
       logger.warn('Controller', `Erase-on-connect failed for ${id}: ${err.message}`);
     }
+
+    // The panel's own clock is only ever set when it is shown, so it drifts: set it whenever a panel connects.
+    await this.ble.writeToDevice(id, commands.setTime(new Date())).catch((err) => logger.warn('Controller', `Setting the panel clock failed for ${id}: ${err.message}`));
 
     await this._playStartup(id);
 
@@ -317,13 +324,13 @@ class AppController extends EventEmitter {
       } else {
         custom = (c) => makePoleGif(order[0], c.width ?? 32, c.height ?? 32);
       }
-    } else if (kind === 'idle-next' || kind === 'idle-podium' || kind === 'idle-standings') {
+    } else if (kind === 'idle-next' || kind === 'idle-schedule' || kind === 'idle-podium' || kind === 'idle-standings') {
       const data = this._idleDataSource();
       await data.refresh().catch(() => {});
       const name = kind;
-      const screen = this._idleScreens([name])[0];
+      const screen = this._idleScreens([name], { force: true })[0];
       if (!screen) return -1;
-      holdMs = 12000;
+      holdMs = screen.slotMs ? screen.slotMs + 2000 : 12000;
       custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
     } else if (kind === 'text-big' || kind === 'text-small') {
       // The panel's own text mode: it scrolls the text itself. Experimental.
@@ -864,6 +871,7 @@ class AppController extends EventEmitter {
   _idleScreenNames() {
     const names = [];
     if (this._setting('idleNextRace', true)) names.push('idle-next');
+    if (this._setting('idleSchedule', true)) names.push('idle-schedule');
     if (this._setting('idleLastPodium', true)) names.push('idle-podium');
     if (this._setting('idleStandings', true)) names.push('idle-standings');
     return names;
@@ -931,13 +939,18 @@ class AppController extends EventEmitter {
   }
 
   /** What each idle screen can show right now; a screen without data is left out of the rotation. */
-  _idleScreens(names = this._idleScreenNames()) {
+  _idleScreens(names = this._idleScreenNames(), { force = false } = {}) {
     const data = this._idleDataSource();
     const screens = [];
     for (const name of names) {
       if (name === 'idle-next') {
         const race = data.nextRace();
         if (race) screens.push({ name, build: (w, h) => makeNextRaceGif({ race: data.nextRace() || race, outline: data.outlineFor(race) }, w, h) });
+      } else if (name === 'idle-schedule') {
+        const race = data.nextRace();
+        const upcoming = race?.sessions?.length && (force || race.sessions[0].start - Date.now() < IDLE_SCHEDULE_DAYS * 86400000);
+        const pages = upcoming ? scheduleDays(race.sessions).length : 0;
+        if (pages) screens.push({ name, slotMs: Math.max(IDLE_SLOT_MS, pages * 3500 + 2500), build: (w, h) => makeScheduleGif({ sessions: race.sessions }, w, h) });
       } else if (name === 'idle-podium') {
         const podium = data.lastPodium();
         if (podium) screens.push({ name, build: (w, h) => makeLastPodiumGif(podium, w, h) });
@@ -975,7 +988,7 @@ class AppController extends EventEmitter {
       await this._sendGifBuffer(id, screen.name, buffer, true, epoch);
     })).catch(() => {});
     // A single screen has nothing to rotate to; do not resend it every slot.
-    idle.timer = setTimeout(() => this._idleAdvance(true), screens.length > 1 ? IDLE_SLOT_MS : IDLE_REFRESH_MS);
+    idle.timer = setTimeout(() => this._idleAdvance(true), screens.length > 1 ? (screen.slotMs || IDLE_SLOT_MS) : IDLE_REFRESH_MS);
   }
 
   /** Spotify started or stopped playing (it reports a stop only after a grace period). */
@@ -1244,6 +1257,7 @@ class AppController extends EventEmitter {
 
   async shutdown() {
     clearInterval(this.nightTimer);
+    clearInterval(this.timeSyncTimer);
     this._stopIdle();
     this.mv.stop();
     this.spotify.stop();

@@ -21,7 +21,7 @@ const { makeYellowMap } = require('../src/main/protocol/trackMapGif');
 const { makeGreenBorderGif, makeFastestLapGif, makeStartupGif } = require('../src/main/protocol/effectGifs');
 const { makeCountdownGif, makeCountdownAnimation, viewFor } = require('../src/main/protocol/countdownGif');
 const { makeGridWalkGif, makeWinnerGif, makePodiumGif, makePoleGif } = require('../src/main/protocol/resultGifs');
-const { makeNextRaceGif, makeLastPodiumGif, makeStandingsGif } = require('../src/main/protocol/idleScreens');
+const { makeNextRaceGif, makeScheduleGif, makeLastPodiumGif, makeStandingsGif } = require('../src/main/protocol/idleScreens');
 const CIRCUITS = require('../assets/circuits.json');
 
 const OUT = path.join(__dirname, '..', 'docs', 'previews');
@@ -164,6 +164,11 @@ async function loadCircuit(key) {
   const monza = CIRCUITS.find((c) => /monza/i.test(c.name + c.location));
   const race = { code: 'ITA', msUntil: (4 * 24 + 7) * 3600000, inProgress: false, start: Date.UTC(2026, 8, 6, 13) };
   saveAnimation('idle-next', makeNextRaceGif({ race, outline: monza.coords }, PANEL, PANEL));
+  const at = (day, h, m) => new Date(2026, 9, day, h, m).getTime(); // times are shown in the local time zone
+  saveAnimation('idle-schedule', makeScheduleGif({
+    sessions: [{ label: 'P1', start: at(2, 12, 30) }, { label: 'P2', start: at(2, 16, 0) }, { label: 'P3', start: at(3, 11, 30) }, { label: 'Q', start: at(3, 15, 0) }, { label: 'R', start: at(4, 15, 0) }],
+    now: at(1, 9, 0),
+  }, PANEL, PANEL));
   saveAnimation('idle-podium', makeLastPodiumGif({
     code: 'JPN',
     podium: [

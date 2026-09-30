@@ -291,7 +291,7 @@ Everything below is drawn by the app at the panel resolution. Several are also a
 
 **Studio, Test Effects** shows an effect on demand and then restores the real display. It is the quickest way to check how something looks on your panel without waiting for a real event. Buttons:
 
-yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, the grid walkthrough, race winner, podium, pole position, the three idle screens, and the startup animation. The four driver screens use the drivers of whatever session is loaded in Multiviewer.
+yellow flag with a sector number, double yellow with a sector number, yellow flag track map, double yellow track map, safety car in this lap, VSC ending, fastest lap, rain, pit exit closed, chequered flag, session countdown (with a seconds box), start delayed, the grid walkthrough, race winner, podium, pole position, the four idle screens (next race, weekend schedule, last podium, standings), scrolling text, and the startup animation. The four driver screens use the drivers of whatever session is loaded in Multiviewer.
 
 A target picker sends to all panels or to one. If a real event arrives while a test is showing, the real event wins. The track map buttons need a session loaded in Multiviewer, because the layout comes from there.
 
@@ -317,13 +317,15 @@ When Multiviewer has no live session and Spotify is not playing, the panel rotat
 
 <p align="center">
   <img src="docs/previews/idle-next.gif" width="128" alt="Next race">
+  <img src="docs/previews/idle-schedule.gif" width="128" alt="Weekend schedule">
   <img src="docs/previews/idle-podium.gif" width="128" alt="Last podium">
   <img src="docs/previews/idle-standings.gif" width="128" alt="Standings">
 </p>
-<p align="center"><sub>Next race, last podium, standings</sub></p>
+<p align="center"><sub>Next race, weekend schedule, last podium, standings</sub></p>
 
 - **Next race.** The circuit outline with the time to go ("4D 7H", "5H30M", "45M", "NOW"), then the country code and the date. A race counts as still on for three hours after its start. A circuit without an outline in the bundled set gets a single page of code, countdown and date.
 - **Lettering.** The next race and podium title screens use a 5x7 pixel font that is easier to read than the 3x5 one used on the driver screens. The standings keep the smaller font because three columns of text do not fit at 5x7 on a 32 pixel wide panel.
+- **Weekend schedule.** One page per day of the coming race weekend: the weekday, then each session (P1, P2, P3, SQ for sprint qualifying, SP for the sprint, Q, R) with its start time in **your local time**, not the track's. A session after midnight lands on the next day for you. Days that are over are dropped, and it joins the rotation in the 10 days before the weekend. Session times come from the same Jolpica calendar as the next race screen, so they follow any schedule change once the calendar refreshes.
 - **Last podium.** "LAST" and the country code, then the podium of the last race in team colors.
 - **Standings.** The top three drivers with their points, then the top three teams.
 - **Data.** It comes from the free [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the community successor to Ergast), not from Multiviewer. Results and standings are refreshed at most every 6 hours and the calendar every 12, so a running app makes a handful of requests a day, one at a time. Everything is cached on disk, so the screens work offline after the first fetch, and failures back off (15 seconds, 1 minute, then every 5 minutes) while the old copy keeps being used. Only the public F1 data is requested; nothing about you is sent.
@@ -357,7 +359,7 @@ Bluetooth is handled entirely in the main process with [`@stoprocent/noble`](htt
 | Yellow flag display | Sector number | Settings | Show a flagged sector as a number or as a track map. |
 | Full sectors for yellow flags | Off | Settings | Show timing sectors 1 to 3 instead of marshal sectors. |
 | Show idle screens | On | Settings | Rotate the idle screens when nothing is live or playing. |
-| Next race, Last podium, Standings | On | Settings | Which idle screens are in the rotation. |
+| Next race, Weekend schedule, Last podium, Standings | On | Settings | Which idle screens are in the rotation. |
 | Night dimming | On | Settings | Dim during the night hours, only while idle screens show. |
 | Night hours | 22:00 to 07:00 | Settings | Local time window for dimming. |
 | Night brightness | 20 | Settings | Brightness percent used during the night. |
@@ -448,6 +450,11 @@ MVLP looks at this repository's latest GitHub release at launch and every 6 hour
 - **Windows (installer) and Linux (AppImage):** the button says **Update now**. It downloads the update in the background with a progress percentage, then **Restart and install** replaces the app and starts the new version.
 - **macOS and the Linux `.deb`:** the button says **Download from GitHub** and opens the release page. macOS cannot replace an app that is not code-signed, and a `.deb` belongs to the package manager.
 - Only the version number and release page are requested from GitHub; nothing about you is sent. Running from source never checks.
+
+## Diagnostics and the panel clock
+
+- **Copy diagnostics** (Settings, About) copies a plain text report to the clipboard: MVLP, Electron and system versions, which integrations are on, each saved panel and its settings, the settings themselves, the update state and the last 60 lines of the activity log (with your user folder replaced by `~`). It contains no Spotify credentials or tokens, but it does contain your panel names, so glance at it before posting it publicly. Paste it into a bug report.
+- **Panel clock.** Panels only get their time when MVLP shows the clock, so the built-in clock drifts. MVLP now sets the panel's clock from your computer whenever the panel connects and every 6 hours after that, without changing what it is showing.
 
 ## Building installers
 

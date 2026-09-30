@@ -21,6 +21,7 @@ const store = new Store({
       autoUpdateCheck: true,
       idleEnabled: true,
       idleNextRace: true,
+      idleSchedule: true,
       idleLastPodium: true,
       idleStandings: true,
       nightDimming: true,

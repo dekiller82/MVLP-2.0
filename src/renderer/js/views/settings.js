@@ -53,6 +53,7 @@ export async function render(section) {
       <p class="help-text">When no session is live and nothing is playing on Spotify, the panels rotate through these screens. Playing a track or starting a session takes over at once.</p>
       ${toggleRow('idle-toggle', 'Show idle screens', 'Otherwise the panel keeps its last display or its own clock.', settings.idleEnabled !== false)}
       ${toggleRow('idle-next-toggle', 'Next race', 'The circuit with a countdown, then the date.', settings.idleNextRace !== false)}
+      ${toggleRow('idle-schedule-toggle', 'Weekend schedule', 'Session times for the coming race weekend, in your local time. Shown in the last 10 days before it.', settings.idleSchedule !== false)}
       ${toggleRow('idle-podium-toggle', 'Last podium', 'The top three of the last race.', settings.idleLastPodium !== false)}
       ${toggleRow('idle-standings-toggle', 'Standings', 'Top three drivers and teams in the championship.', settings.idleStandings !== false)}
       ${toggleRow('night-toggle', 'Night dimming', 'Dim the panels during the night hours, only while the idle screens are showing.', settings.nightDimming !== false)}
@@ -92,6 +93,7 @@ export async function render(section) {
         </div>
       </div>
       <div style="display:flex;gap:10px;">
+        <button class="btn btn-sm" id="copy-diagnostics" title="Copies versions, settings, panel state and the recent activity log. Check it before posting it publicly.">Copy diagnostics</button>
         <button class="btn btn-sm" id="link-repo">GitHub Repository</button>
         <button class="btn btn-sm" id="link-mv">Multiviewer</button>
       </div>
@@ -117,6 +119,7 @@ export async function render(section) {
   bindToggle(section, 'sector-toggle', 'fullSectorYellows');
   bindToggle(section, 'idle-toggle', 'idleEnabled');
   bindToggle(section, 'idle-next-toggle', 'idleNextRace');
+  bindToggle(section, 'idle-schedule-toggle', 'idleSchedule');
   bindToggle(section, 'idle-podium-toggle', 'idleLastPodium');
   bindToggle(section, 'idle-standings-toggle', 'idleStandings');
   bindToggle(section, 'night-toggle', 'nightDimming');
@@ -151,6 +154,10 @@ export async function render(section) {
     render(section);
   });
 
+  section.querySelector('#copy-diagnostics').addEventListener('click', async () => {
+    await window.mvlp.invoke('app:copyDiagnostics');
+    showToast('Diagnostics copied. Paste them into your bug report.', 'success', 3000);
+  });
   section.querySelector('#link-repo').addEventListener('click', () => {
     window.mvlp.invoke('app:openExternal', 'https://github.com/dekiller82/MVLP-2.0');
   });

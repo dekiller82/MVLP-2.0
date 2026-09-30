@@ -59,6 +59,11 @@ function setPixel({ x, y, color = 0xffffff }) {
   return [makePayload(0x0105, payload)];
 }
 
+/** Sets the panel's own clock (hours, minutes, seconds), without changing what it displays. */
+function setTime(date = new Date()) {
+  return [makePayload(0x8001, Buffer.from([date.getHours(), date.getMinutes(), date.getSeconds(), 0x00]))];
+}
+
 /** style 1-8; date/time are JS Date objects. */
 function clockMode({ style = 1, date = new Date(), showDate = true, show24h = true } = {}) {
   if (style < 1 || style > 8) throw new Error('Clock style must be between 1 and 8.');
@@ -96,5 +101,6 @@ module.exports = {
   prgMode,
   setPixel,
   clockMode,
+  setTime,
   expert,
 };

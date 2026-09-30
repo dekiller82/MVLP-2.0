@@ -21,6 +21,10 @@ const RETRY_STEPS_MS = [15000, 60000, 300000];
 const RETRY_JITTER = 0.2;
 const RACE_LENGTH_MS = 3 * HOUR; // a race counts as still "on" this long after it starts
 const MATCH_RADIUS_KM = 10;
+const CALENDAR_VERSION = 2; // 2 added the weekend's session times; an older cached calendar is refetched
+
+// The sessions Jolpica lists for a weekend, with the short labels the panel shows.
+const SESSION_KEYS = [['FirstPractice', 'P1'], ['SecondPractice', 'P2'], ['ThirdPractice', 'P3'], ['SprintQualifying', 'SQ'], ['Sprint', 'SP'], ['Qualifying', 'Q']]; 
 
 // Team colours as Multiviewer reports them (the same colours the driver screens use).
 const TEAM_COLORS = {
@@ -112,6 +116,17 @@ class IdleData {
     return Date.parse(`${race.date}T${race.time || '12:00:00Z'}`);
   }
 
+  /** The weekend in order, as [{ label, start }] (UTC milliseconds), the race last. */
+  static _sessionsOf(race) {
+    const sessions = [];
+    for (const [key, label] of SESSION_KEYS) {
+      const s = race[key];
+      if (s?.date) sessions.push({ label, start: Date.parse(`${s.date}T${s.time || '12:00:00Z'}`) });
+    }
+    sessions.push({ label: 'R', start: IdleData._startOf(race) });
+    return sessions.filter((s) => Number.isFinite(s.start)).sort((a, b) => a.start - b.start);
+  }
+
   async _fetchers() {
     const num = IdleData._num;
     return {
@@ -119,8 +134,9 @@ class IdleData {
         const m = await this._get('/current.json?limit=100');
         return {
           fetchedAt: this._now(),
+          version: CALENDAR_VERSION,
           races: m.RaceTable.Races.map((r) => ({
-            round: num(r.round), name: r.raceName, date: r.date, time: r.time || null, start: IdleData._startOf(r),
+            round: num(r.round), name: r.raceName, date: r.date, time: r.time || null, start: IdleData._startOf(r), sessions: IdleData._sessionsOf(r),
             circuitId: r.Circuit.circuitId, locality: r.Circuit.Location.locality, country: r.Circuit.Location.country,
             lat: Number(r.Circuit.Location.lat), lon: Number(r.Circuit.Location.long),
           })),
@@ -182,7 +198,7 @@ class IdleData {
       const fetchers = await this._fetchers();
       for (const key of Object.keys(TTL_MS)) {
         const held = this.data[key];
-        const stale = !held || this._now() - held.fetchedAt > TTL_MS[key];
+        const stale = !held || this._now() - held.fetchedAt > TTL_MS[key] || (key === 'calendar' && (held.version || 1) < CALENDAR_VERSION);
         const wait = this.failures[key]?.retryAt || 0;
         if (!stale || this._now() < wait) continue;
         try {

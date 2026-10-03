@@ -54,6 +54,7 @@ It is a ground-up rewrite of the original [MVLP](https://github.com/dekiller82/M
 
 **Panels and the app**
 
+- **Emulated panel** for people without hardware: a virtual LED panel in its own window that behaves like the real thing.
 - Several panels at the same time, each with its own size, brightness, orientation and clock style.
 - Direct Bluetooth Low Energy from the main process. Known panels reconnect on their own.
 - A startup animation when a panel connects.
@@ -345,6 +346,7 @@ Bluetooth is handled entirely in the main process with [`@stoprocent/noble`](htt
 - **On connect.** The startup animation plays, every buffer on the panel is erased, and then the right display for the moment appears: the current flag, the countdown, Spotify art, or the logo.
 - **Writes.** Payloads are split into 244-byte chunks and each chunk is written *with response*, one at a time per panel. See the notes below for why.
 - **Several panels.** Every panel is a separate connection with its own queue and its own resolution. Generated images are built per panel.
+- **Emulated panels.** No LED panel? Devices, Add Emulated Panel adds a virtual one that opens in its own resizable window (with its own taskbar entry; its size and position are remembered). It receives exactly the frames a real panel would (images, GIFs, text mode, power, erase) and decodes them in `src/main/virtual-panel.js`, so every effect, the Studio, Multiviewer and Spotify work on it, next to real panels if you like. Choose its resolution and a pixel style (round LEDs, square LEDs, flat pixels), then adjust the **dot mask** on its card: dot size, edge softness, how dark the gaps between dots are, and a brightness lift. The open window follows the sliders live, and Reset returns to the style's defaults. It has no buffer, anchor, brightness or flip settings, since those only matter to real hardware (it always shows at full brightness and upright, night dimming included). Its settings are saved the moment you change them. **Only open while Multiviewer is running** keeps the window shut until Multiviewer connects. Closing the window hides the panel until you open it again from its card or Multiviewer reconnects. The panel's built-in clock styles are approximated and the text speed is a guess.
 
 ## Settings reference
 

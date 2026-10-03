@@ -2,6 +2,16 @@
 
 Newest first. The app shows the entries for the versions you skipped the first time it starts after an update. Format: `## version (date)`, then `### Section` headings with `-` bullets.
 
+## 2.2.0 (2026-10-04)
+
+### New
+- Emulated panels: no LED panel needed. Devices, Add Emulated Panel opens a virtual panel in its own resizable window that shows exactly what a real panel would.
+- Choose the emulated panel's resolution and pixel style (round LEDs, square LEDs, flat pixels), and tune the dot mask: dot size, edge softness, gap darkness and a brightness lift. Changes show live.
+- An emulated panel can open only while Multiviewer is running, and its window size and position are remembered.
+
+### Improved
+- Two panels now fit side by side on the Devices page.
+
 ## 2.1.0 (2026-09-30)
 
 ### New

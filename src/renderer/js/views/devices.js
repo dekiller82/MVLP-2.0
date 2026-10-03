@@ -4,9 +4,13 @@ import * as ble from '../ble-client.js';
 import { showToast } from '../components/toast.js';
 import { openModal, confirmModal } from '../components/modal.js';
 import { pickDevice } from '../components/chooser.js';
+import { PIXEL_STYLES, DOT_DEFAULTS, resolveDots } from '../components/dotmask.js';
 import { escapeHtml } from '../util.js';
 
+const isEmulated = (id) => String(id).startsWith('Emulator-');
+
 let unsubscribers = [];
+let openWindows = new Set(); // emulated panels whose window is open
 
 export async function render(section) {
   section.innerHTML = `
@@ -15,7 +19,10 @@ export async function render(section) {
         <h1>Devices</h1>
         <p>Connect and configure your iPixel LED panels.</p>
       </div>
-      <button class="btn btn-primary" id="add-device-btn">+ Add Device</button>
+      <div class="device-actions">
+        <button class="btn" id="add-emulator-btn" title="A virtual panel in its own window, for when you have no LED panel">+ Add Emulated Panel</button>
+        <button class="btn btn-primary" id="add-device-btn">+ Add Device</button>
+      </div>
     </div>
     <div id="device-list" class="grid grid-2"></div>
   `;
@@ -23,12 +30,14 @@ export async function render(section) {
   // Wire up interaction before the (data-dependent) list render, so a bad
   // config for one device can't take the "Add Device" button down with it.
   section.querySelector('#add-device-btn').addEventListener('click', () => addDevice(section));
+  section.querySelector('#add-emulator-btn').addEventListener('click', () => addEmulator(section));
 
   unsubscribers.forEach((fn) => fn());
   unsubscribers = [
     window.mvlp.on('device:connected', () => refresh(section)),
     window.mvlp.on('device:disconnected', () => refresh(section)),
     window.mvlp.on('device:connect-failed', () => refresh(section)),
+    window.mvlp.on('emulator:windows', () => refresh(section)),
   ];
 
   await refresh(section);
@@ -36,6 +45,7 @@ export async function render(section) {
 
 async function refresh(section) {
   const devices = await window.mvlp.invoke('config:getDevices');
+  openWindows = new Set(await window.mvlp.invoke('emulator:getWindows'));
   const listEl = section.querySelector('#device-list');
   const entries = Object.entries(devices);
 
@@ -44,7 +54,7 @@ async function refresh(section) {
     listEl.innerHTML = `
       <div class="empty-state">
         <h3>No panels yet</h3>
-        <p>Click "Add Device" and pick your iPixel panel from the list.</p>
+        <p>Click "Add Device" and pick your iPixel panel from the list, or "Add Emulated Panel" to try MVLP without one.</p>
       </div>`;
     return;
   }
@@ -65,22 +75,81 @@ const DEVICE_CONFIG_DEFAULTS = {
   brightness: 100, flipDisplay: false, clockStyle: 7,
 };
 
+const DOT_SLIDERS = [
+  { key: 'dotSize', label: 'Dot size', min: 20, max: 140, hint: 'How much of each pixel the lit dot fills' },
+  { key: 'softness', label: 'Edge softness', min: 0, max: 100, hint: 'Hard edge to a faded edge' },
+  { key: 'maskStrength', label: 'Gap darkness', min: 0, max: 100, hint: 'How dark the space between the dots is' },
+  { key: 'boost', label: 'Brightness lift', min: 100, max: 200, hint: 'Makes up for the light the mask hides' },
+];
+
+function dotMaskControls(dots) {
+  const flat = dots.style === 'flat';
+  return `
+    <div class="field dot-mask">
+      <div class="row-between"><label style="margin:0;"><strong>Dot mask</strong></label><button class="btn btn-sm" data-action="reset-dots">Reset</button></div>
+      ${DOT_SLIDERS.filter((d) => !(flat && d.key !== 'boost')).map((d) => `
+      <div class="dot-slider" title="${d.hint}">
+        <div class="row-between"><label style="margin:0;">${d.label}</label><span data-role="dot-${d.key}" style="font-size:12px;color:var(--text-dim);">${Math.round(dots[d.key])}%</span></div>
+        <input type="range" min="${d.min}" max="${d.max}" data-dot="${d.key}" value="${dots[d.key]}" />
+      </div>`).join('')}
+    </div>`;
+}
+
+/** An emulated panel has no Save button: every setting is stored as soon as it changes, and the open window follows. */
+function wireEmulatedSettings(id, card, section) {
+  const save = (patch) => window.mvlp.invoke('config:setDeviceOption', id, patch).catch((err) => showToast(err.message, 'error'));
+  for (const name of ['width', 'height']) {
+    const input = card.querySelector(`[data-field="${name}"]`);
+    input.addEventListener('change', () => {
+      const value = parseInt(input.value, 10);
+      if (value >= 1) save({ [name]: value });
+      else showToast('The size must be at least 1 pixel.', 'error');
+    });
+  }
+  for (const name of ['autoResize', 'onlyWithMv']) {
+    const input = card.querySelector(`[data-field="${name}"]`);
+    input.addEventListener('change', () => save({ [name]: input.checked }));
+  }
+  wireDotMask(id, card, section);
+}
+
+/** The dot mask applies as it is changed, so the open window can be watched. Changing the style starts from that style's defaults. */
+function wireDotMask(id, card, section) {
+  const save = (patch) => window.mvlp.invoke('config:setDeviceOption', id, patch);
+  card.querySelectorAll('[data-dot]').forEach((input) => {
+    input.addEventListener('input', () => {
+      card.querySelector(`[data-role="dot-${input.dataset.dot}"]`).textContent = `${input.value}%`;
+    });
+    input.addEventListener('change', () => save({ [input.dataset.dot]: Number(input.value) }));
+  });
+  card.querySelector('[data-field="pixelStyle"]').addEventListener('change', async (e) => {
+    await save({ pixelStyle: e.target.value, ...DOT_DEFAULTS[e.target.value] });
+    refresh(section);
+  });
+  card.querySelector('[data-action="reset-dots"]').addEventListener('click', async () => {
+    const style = card.querySelector('[data-field="pixelStyle"]').value;
+    await save({ ...DOT_DEFAULTS[style] });
+    refresh(section);
+  });
+}
+
 function buildDeviceCard(id, rawConfig, section) {
   // Defensive: configs saved before a field existed (or edited by hand)
   // shouldn't crash the whole view - fill in anything missing.
   const config = { ...DEVICE_CONFIG_DEFAULTS, ...rawConfig };
   const connected = ble.isConnected(id);
+  const emulated = isEmulated(id);
   const card = document.createElement('div');
   card.className = 'card device-card';
   card.innerHTML = `
     <div class="device-card-head">
       <span class="device-dot ${connected ? 'online' : ''}"></span>
       <div>
-        <div class="device-name">${escapeHtml(config.name || id)}</div>
-        <div class="device-id">${connected ? 'Connected' : 'Not connected'}</div>
+        <div class="device-name">${escapeHtml(config.name || id)}${emulated ? ' <span class="badge-emulated">Emulated</span>' : ''}</div>
+        <div class="device-id">${connected ? (emulated ? 'On' : 'Connected') : (emulated ? 'Off' : 'Not connected')}</div>
       </div>
       <div class="device-actions">
-        <button class="btn btn-sm" data-action="toggle-connect">${connected ? 'Disconnect' : 'Connect'}</button>
+        <button class="btn btn-sm" data-action="toggle-connect">${connected ? (emulated ? 'Turn off' : 'Disconnect') : (emulated ? 'Turn on' : 'Connect')}</button>
         <button class="icon-btn" data-action="remove" title="Remove device">&times;</button>
       </div>
     </div>
@@ -88,45 +157,60 @@ function buildDeviceCard(id, rawConfig, section) {
     <div class="options-grid">
       <div class="field"><label>Width (px)</label><input type="number" min="1" data-field="width" value="${config.width}" /></div>
       <div class="field"><label>Height (px)</label><input type="number" min="1" data-field="height" value="${config.height}" /></div>
+      ${emulated ? `
+      <div class="field"><label>Pixel style</label>
+        <select data-field="pixelStyle">${PIXEL_STYLES.map(([key, label]) => `<option value="${key}" ${key === (config.pixelStyle || 'round') ? 'selected' : ''}>${label}</option>`).join('')}</select>
+      </div>` : `
       <div class="field"><label>Start Buffer (1-255)</label><input type="number" min="1" max="255" data-field="buffer" value="${config.buffer}" /></div>
       <div class="field"><label>Anchor (hex)</label><input type="text" data-field="anchor" value="0x${config.anchor.toString(16)}" /></div>
       <div class="field"><label>Exit Clock Style</label>
         <select data-field="clockStyle">${[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `<option value="${n}" ${n === config.clockStyle ? 'selected' : ''}>${n}</option>`).join('')}</select>
-      </div>
+      </div>`}
       <div class="field">
         <label>Auto-resize to panel size</label>
         <label class="switch"><input type="checkbox" data-field="autoResize" ${config.autoResize ? 'checked' : ''} /><span class="track"></span></label>
       </div>
     </div>
-    <div class="field">
+    ${emulated ? '' : `<div class="field">
       <div class="row-between"><label style="margin:0;">Brightness</label><span data-role="brightness-value" style="font-size:12px;color:var(--text-dim);">${config.brightness}%</span></div>
       <input type="range" min="1" max="100" data-field="brightness" value="${config.brightness}" ${connected ? '' : 'disabled'} />
-    </div>
-    <div class="row-between">
+    </div>`}
+    ${emulated ? '' : `<div class="row-between">
       <div class="row-label"><strong>Flip Display 180°</strong></div>
       <label class="switch"><input type="checkbox" data-field="flipDisplay" ${config.flipDisplay ? 'checked' : ''} ${connected ? '' : 'disabled'} /><span class="track"></span></label>
-    </div>
+    </div>`}
+    ${emulated ? dotMaskControls(resolveDots(config)) : ''}
+    ${emulated ? `
+    <div class="row-between">
+      <div class="row-label"><strong>Only open while Multiviewer is running</strong></div>
+      <label class="switch"><input type="checkbox" data-field="onlyWithMv" ${config.onlyWithMv ? 'checked' : ''} /><span class="track"></span></label>
+    </div>` : ''}
     <div class="modal-actions" style="justify-content:flex-start;">
-      <button class="btn btn-primary btn-sm" data-action="save">Save Options</button>
-      <button class="btn btn-sm" data-action="erase" ${connected ? '' : 'disabled'}>Erase Buffers</button>
+      ${emulated ? '' : '<button class="btn btn-primary btn-sm" data-action="save">Save Options</button>'}
+      ${emulated
+        ? `<button class="btn btn-sm" data-action="toggle-window" ${connected ? '' : 'disabled'}>${openWindows.has(id) ? 'Close window' : 'Open window'}</button>`
+        : `<button class="btn btn-sm" data-action="erase" ${connected ? '' : 'disabled'}>Erase Buffers</button>`}
     </div>
   `;
 
   card.querySelector('[data-action="toggle-connect"]').addEventListener('click', () => toggleConnect(id, section));
   card.querySelector('[data-action="remove"]').addEventListener('click', () => removeDevice(id, card));
-  card.querySelector('[data-action="save"]').addEventListener('click', () => saveOptions(id, card));
-  card.querySelector('[data-action="erase"]').addEventListener('click', () => eraseDevice(id));
+  card.querySelector('[data-action="save"]')?.addEventListener('click', () => saveOptions(id, card));
+  card.querySelector('[data-action="erase"]')?.addEventListener('click', () => eraseDevice(id));
+  card.querySelector('[data-action="toggle-window"]')?.addEventListener('click', () => window.mvlp.invoke('emulator:setWindow', id, !openWindows.has(id)));
 
-  const brightnessInput = card.querySelector('[data-field="brightness"]');
-  brightnessInput.addEventListener('input', () => {
+  const brightnessInput = card.querySelector('[data-field="brightness"]'); // real panels only
+  brightnessInput?.addEventListener('input', () => {
     card.querySelector('[data-role="brightness-value"]').textContent = `${brightnessInput.value}%`;
   });
-  brightnessInput.addEventListener('change', async () => {
+  brightnessInput?.addEventListener('change', async () => {
     await window.mvlp.invoke('ble:setBrightness', id, Number(brightnessInput.value));
   });
 
-  const flipInput = card.querySelector('[data-field="flipDisplay"]');
-  flipInput.addEventListener('change', async () => {
+  if (emulated) wireEmulatedSettings(id, card, section);
+
+  const flipInput = card.querySelector('[data-field="flipDisplay"]'); // real panels only
+  flipInput?.addEventListener('change', async () => {
     await window.mvlp.invoke('ble:setFlip', id, flipInput.checked);
   });
 
@@ -159,15 +243,16 @@ async function removeDevice(id, card) {
 
 async function saveOptions(id, card) {
   try {
+    const field = (name) => card.querySelector(`[data-field="${name}"]`);
     const patch = {
-      width: parseInt(card.querySelector('[data-field="width"]').value, 10),
-      height: parseInt(card.querySelector('[data-field="height"]').value, 10),
-      buffer: parseInt(card.querySelector('[data-field="buffer"]').value, 10),
-      anchor: parseInt(card.querySelector('[data-field="anchor"]').value, 0),
-      clockStyle: parseInt(card.querySelector('[data-field="clockStyle"]').value, 10),
-      autoResize: card.querySelector('[data-field="autoResize"]').checked,
+      width: parseInt(field('width').value, 10),
+      height: parseInt(field('height').value, 10),
+      autoResize: field('autoResize').checked,
     };
-    if (Object.values(patch).some((v) => Number.isNaN(v))) throw new Error('Please check your numeric inputs.');
+    patch.buffer = parseInt(field('buffer').value, 10);
+    patch.anchor = parseInt(field('anchor').value, 0);
+    patch.clockStyle = parseInt(field('clockStyle').value, 10);
+    if (Object.values(patch).some((v) => typeof v === 'number' && Number.isNaN(v))) throw new Error('Please check your numeric inputs.');
     await window.mvlp.invoke('config:setDeviceOption', id, patch);
     showToast('Device options saved.', 'success');
   } catch (err) {
@@ -185,6 +270,20 @@ async function eraseDevice(id) {
   if (!ok) return;
   await window.mvlp.invoke('ble:eraseAll', id);
   showToast('Erase command sent.', 'success');
+}
+
+async function addEmulator(section) {
+  try {
+    const id = await window.mvlp.invoke('emulator:add');
+    await refresh(section);
+    const dims = await promptDimensions('Emulated panel');
+    if (dims) {
+      await window.mvlp.invoke('config:setDeviceOption', id, { width: dims.width, height: dims.height });
+      await refresh(section);
+    }
+  } catch (err) {
+    showToast(`Could not add the emulated panel: ${err.message}`, 'error');
+  }
 }
 
 async function addDevice(section) {

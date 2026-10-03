@@ -7,6 +7,7 @@ const INVOKE_CHANNELS = new Set([
   'config:getSettings', 'config:setSetting', 'config:getSpotifyCredentials',
   'ble:scanStart', 'ble:scanStop', 'ble:connect', 'ble:disconnect', 'ble:getConnected', 'ble:forgetDevice',
   'ble:eraseAll', 'ble:setBrightness', 'ble:setFlip', 'ble:sendExpert', 'ble:sendGifPreset',
+  'emulator:add', 'emulator:getState', 'emulator:getConfig', 'emulator:getWindows', 'emulator:setWindow',
   'ble:listPresetGifs', 'test:effect', 'ble:sendClockToAll', 'ble:writeFiles',
   'mv:setEnabled', 'mv:getState', 'spotify:saveAndConnect', 'spotify:disconnect', 'spotify:getState',
   'app:chooseFiles', 'app:getVersion', 'app:copyDiagnostics', 'whatsnew:pending', 'whatsnew:latest', 'app:openExternal', 'app:getLaunchAtLogin', 'app:quit',
@@ -17,6 +18,7 @@ const INVOKE_CHANNELS = new Set([
 const EVENT_CHANNELS = new Set([
   'ble:chooserDevices',
   'device:connected', 'device:disconnected', 'device:connect-failed',
+  'emulator:display', 'emulator:config', 'emulator:windows',
   'mv:status', 'mv:action', 'spotify:status', 'log:entry', 'updater:state', 'integrations:changed',
 ]);
 

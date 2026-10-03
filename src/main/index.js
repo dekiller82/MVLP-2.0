@@ -11,6 +11,7 @@ const { AppTray } = require('./tray');
 const { registerIpc } = require('./ipc');
 const autolaunch = require('./autolaunch');
 const { Updater } = require('./updater');
+const { EmulatorWindows } = require('./emulator-windows');
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('app.mvlp.desktop');
@@ -26,6 +27,7 @@ let tray;
 let controller;
 let bleBridge;
 let updater;
+let emulatorWindows;
 let shuttingDown = false;
 
 function createWindow() {
@@ -79,6 +81,11 @@ app.whenReady().then(() => {
 
   bleBridge = new BleBridge(mainWindow);
   controller = new AppController(bleBridge);
+  emulatorWindows = new EmulatorWindows({
+    bleBridge,
+    controller,
+    notify: (channel, ...args) => { if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send(channel, ...args); },
+  });
   tray = new AppTray(mainWindow);
 
   // In-app installs work for the Windows installer and the Linux AppImage; see updater.js. Elsewhere the button opens the release page.
@@ -88,7 +95,7 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('updater:state', state);
   });
 
-  registerIpc({ mainWindow, bleBridge, controller, updater });
+  registerIpc({ mainWindow, bleBridge, controller, updater, emulatorWindows });
 
   // The tray menu's ticks follow the real state, whoever changed it (the tray, the dashboard or startup).
   const refreshTrayMenu = () => tray.updateMenu({
@@ -139,6 +146,7 @@ app.on('before-quit', (event) => {
   shuttingDown = true;
   Promise.resolve(controller?.shutdown())
     .catch(() => {})
+    .then(() => emulatorWindows?.closeAll())
     .then(() => bleBridge?.shutdown())
     .catch(() => {})
     .finally(() => {

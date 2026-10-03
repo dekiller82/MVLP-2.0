@@ -9,6 +9,8 @@ const autolaunch = require('./autolaunch');
 const { REPO } = require('./updater');
 const { buildDiagnostics } = require('./diagnostics');
 const whatsnew = require('./whatsnew');
+const { EMULATED_PREFIX, isEmulatedId } = require('./virtual-panel');
+const { windowConfig } = require('./emulator-windows');
 
 function notify(title, body) {
   if (!store.getSettings().notifications) return;
@@ -16,7 +18,7 @@ function notify(title, body) {
   new Notification({ title, body }).show();
 }
 
-function registerIpc({ mainWindow, bleBridge, controller, updater }) {
+function registerIpc({ mainWindow, bleBridge, controller, updater, emulatorWindows }) {
   const send = (channel, ...args) => {
     if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     try {
@@ -54,6 +56,7 @@ function registerIpc({ mainWindow, bleBridge, controller, updater }) {
   ipcMain.handle('config:setDeviceOption', (_e, id, patch) => {
     const current = store.getDevice(id) || {};
     store.setDevice(id, { ...current, ...patch });
+    if (isEmulatedId(id)) emulatorWindows.configChanged(id);
     return store.getDevice(id);
   });
   ipcMain.handle('config:removeDevice', (_e, id) => store.removeDevice(id));
@@ -80,6 +83,21 @@ function registerIpc({ mainWindow, bleBridge, controller, updater }) {
   ipcMain.handle('ble:forgetDevice', async (_e, id) => {
     await bleBridge.forget(id);
     store.removeDevice(id);
+  });
+
+  // ---- Emulated panels ------------------------------------------------------
+  ipcMain.handle('emulator:getState', (_e, id) => bleBridge.getEmulatedState(id));
+  ipcMain.handle('emulator:getConfig', (_e, id) => windowConfig(id));
+  ipcMain.handle('emulator:getWindows', () => emulatorWindows.openIds());
+  ipcMain.handle('emulator:setWindow', (_e, id, open) => emulatorWindows.setOpen(id, Boolean(open)));
+  ipcMain.handle('emulator:add', async () => {
+    const devices = store.getDevices();
+    let n = 1;
+    while (devices[`${EMULATED_PREFIX}${n}`]) n += 1;
+    const id = `${EMULATED_PREFIX}${n}`;
+    store.setDevice(id, { name: `Emulated panel ${n}`, pixelStyle: 'round', onlyWithMv: false });
+    await bleBridge.connect(id);
+    return id;
   });
 
   // ---- Device actions -------------------------------------------------------

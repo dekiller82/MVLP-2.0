@@ -1,0 +1,11 @@
+/* The emulated panel window: the screen fills the window, keeping the panel's proportions. */
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+#emulator-root { -webkit-app-region: drag; user-select: none; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+
+.emulator-bezel { position: relative; background: #000; }
+.emulator-screen { position: absolute; inset: 0; transition: opacity .2s; }
+.emulator-image, .emulator-canvas { -webkit-user-drag: none; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.emulator-image[hidden], .emulator-canvas[hidden] { display: none; }
+.emulator-mask { position: absolute; inset: 0; pointer-events: none; }
+
+/* The mask is one cell per panel pixel; its size and image are set from the panel's config (see components/dotmask.js). */

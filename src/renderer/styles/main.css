@@ -113,8 +113,8 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 .view-header p { color: var(--text-dim); margin: 4px 0 0; font-size: 13px; }
 
 .grid { display: grid; gap: 18px; }
-.grid-2 { grid-template-columns: repeat(2, 1fr); }
-.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } /* minmax(0, ...) lets a column shrink below its content */
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
 
 .card {
@@ -240,7 +240,15 @@ input[type="range"]::-webkit-slider-thumb {
 .device-name { font-weight: 700; font-size: 14px; }
 .device-id { font-size: 11px; color: var(--text-faint); font-family: monospace; }
 .device-actions { display: flex; gap: 8px; margin-left: auto; }
-.options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.device-actions .btn { white-space: nowrap; }
+.badge-emulated {
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent);
+  vertical-align: middle;
+}
+.options-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.options-grid input, .options-grid select { min-width: 0; }
+.device-card { min-width: 0; }
 .divider { height: 1px; background: var(--border); margin: 4px 0; border: none; }
 
 .empty-state {

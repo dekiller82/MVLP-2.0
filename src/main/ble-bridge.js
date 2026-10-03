@@ -4,6 +4,7 @@ const { EventEmitter } = require('events');
 const noble = require('@stoprocent/noble');
 const logger = require('./logger');
 const store = require('./store');
+const { VirtualPanel, isEmulatedId } = require('./virtual-panel');
 
 const DEFAULT_DEVICE_CONFIG = {
   buffer: 1,
@@ -71,6 +72,8 @@ class BleBridge extends EventEmitter {
     this.seen = new Map();
     /** @type {Map<string, {peripheral:any, characteristic:any, queue:Promise}>} */
     this.links = new Map();
+    /** @type {Map<string, VirtualPanel>} emulated panels, kept while the app runs so the window can read their last state */
+    this.emulated = new Map();
     this.connecting = new Set();
     this.wanted = new Set(); // names we should keep trying to (re)connect
     this.scanUsers = 0;
@@ -194,6 +197,10 @@ class BleBridge extends EventEmitter {
    */
   async connect(name) {
     if (this.links.has(name)) return name;
+    if (isEmulatedId(name)) {
+      await null; // at startup this runs inside the constructor, before the controller is listening
+      return this._connectEmulated(name);
+    }
     if (this.connecting.has(name)) throw new Error('Already connecting to this device.');
     this.connecting.add(name);
     this.wanted.add(name);
@@ -226,6 +233,32 @@ class BleBridge extends EventEmitter {
     }
   }
 
+  /** An emulated panel needs no Bluetooth: it is "connected" at once and decodes writes itself. */
+  _connectEmulated(name) {
+    this.wanted.add(name);
+    let panel = this.emulated.get(name);
+    if (!panel) {
+      panel = new VirtualPanel();
+      panel.on('display', (state) => this.emit('emulator-display', name, state));
+      this.emulated.set(name, panel);
+    }
+    panel.reset();
+    this.links.set(name, { panel, queue: Promise.resolve() });
+    this.devices.set(name, { id: name, name, connected: true });
+    this.ensureDeviceConfig(name);
+    logger.info('Emulator', `${name} is on.`);
+    this.emit('device-connected', name, name);
+    return name;
+  }
+
+  getEmulatedIds() {
+    return [...this.emulated.keys()];
+  }
+
+  getEmulatedState(name) {
+    return this.emulated.get(name)?.getState() ?? null;
+  }
+
   _onLinkLost(name) {
     if (!this.links.delete(name)) return;
     const dev = this.devices.get(name);
@@ -239,7 +272,9 @@ class BleBridge extends EventEmitter {
     this.wanted.delete(name);
     const link = this.links.get(name);
     if (!link) return;
-    try { await link.peripheral.disconnectAsync(); } catch { /* already gone */ }
+    if (!link.panel) {
+      try { await link.peripheral.disconnectAsync(); } catch { /* already gone */ }
+    }
     this._onLinkLost(name);
   }
 
@@ -247,12 +282,14 @@ class BleBridge extends EventEmitter {
   async forget(name) {
     await this.disconnect(name);
     this.seen.delete(name);
+    this.emulated.delete(name);
   }
 
   _kickReconnect() {
-    if (this.shuttingDown || noble.state !== 'poweredOn') return;
+    if (this.shuttingDown) return;
     for (const name of this.wanted) {
       if (this.links.has(name) || this.connecting.has(name)) continue;
+      if (!isEmulatedId(name) && noble.state !== 'poweredOn') continue;
       this.connect(name).catch(() => {});
     }
   }
@@ -272,6 +309,10 @@ class BleBridge extends EventEmitter {
     const link = this.links.get(deviceId);
     if (!link) return Promise.reject(new Error('Device is not connected.'));
     const total = payloads.reduce((n, p) => n + p.length, 0);
+    if (link.panel) {
+      link.panel.receive(payloads);
+      return Promise.resolve();
+    }
     const run = async () => {
       logger.info('Bluetooth', `Writing ${total} bytes (${payloads.length} payload(s)) to ${deviceId}...`);
       for (const payload of payloads) {
@@ -296,7 +337,7 @@ class BleBridge extends EventEmitter {
   async shutdown() {
     this.shuttingDown = true;
     clearInterval(this.reconnectTimer);
-    await Promise.allSettled([...this.links.values()].map((l) => l.peripheral.disconnectAsync()));
+    await Promise.allSettled([...this.links.values()].filter((l) => l.peripheral).map((l) => l.peripheral.disconnectAsync()));
     try { await noble.stopScanningAsync(); } catch { /* ignore */ }
   }
 }

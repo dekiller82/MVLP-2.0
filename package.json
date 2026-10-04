@@ -1,7 +1,7 @@
 {
   "name": "mvlp",
   "productName": "MVLP",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "MVLP connects iPixel-compatible LED panels to Multiviewer for F1 and Spotify, showing live track status and album art on your panel.",
   "author": "dekiller82",
   "license": "MIT",

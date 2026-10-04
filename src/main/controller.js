@@ -64,6 +64,7 @@ const ANIMATION_SPAN_MS = 65000;
 
 // Transfer-time estimates: measured on a real panel, about 4-5 bytes per ms.
 const DEFAULT_BYTES_PER_MS = 4.5;
+const TEST_SENDING_MS = 45000; // longest a test effect may take to be sent before it stops holding the idle screens back
 const STILL_BYTES_GUESS = 200;
 const ANIMATION_BYTES_GUESS = 10000;
 
@@ -290,80 +291,98 @@ class AppController extends EventEmitter {
 
     const epoch = this._beginDisplay();
     clearTimeout(this.testTimer);
+    // Marks the test as under way while its screens are still being sent. A real panel needs seconds for a
+    // GIF, and without this the idle rotation or a restore could slip in meanwhile and overwrite the test.
+    const marker = setTimeout(() => { if (this.testTimer === marker) this.testTimer = null; }, TEST_SENDING_MS);
+    this.testTimer = marker;
     this._clearOverlay();
+    let scheduled = false;
+    try {
 
-    const named = { rain: 10000, pitclosed: 10000, chequered: 10000, 'sc-ending': 10000, 'vsc-ending': 10000, fastest: 2000 };
-    let holdMs = 8000;
-    let custom = null; // built per panel: (config) => Promise<Buffer>
+      const named = { rain: 10000, pitclosed: 10000, chequered: 10000, 'sc-ending': 10000, 'vsc-ending': 10000, fastest: 2000 };
+      let holdMs = 8000;
+      let custom = null; // built per panel: (config) => Promise<Buffer>
 
-    if (kind === 'yellow-map' || kind === 'yellow-map-double') {
-      // Negative results tell the UI why: no session (-1), circuit not in the dataset (-2), layout not fetched yet (-3).
-      if (this.mv.sessionId === null) return -1;
-      if (!this.mv.circuit) return this.mv.circuitStatus === 'unavailable' ? -2 : -3;
-      const sectors = String(arg ?? '5,6').split(/[,\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-      const name = `yellowmap-${(sectors.length ? sectors : [5]).join('.')}${kind === 'yellow-map-double' ? 'd' : ''}`;
-      await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, name)));
-    } else if (kind === 'yellow-sector' || kind === 'yellow-sector-double') {
-      const n = Math.max(1, Math.min(99, Number(arg) || 1));
-      await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, `yellow-${n}${kind === 'yellow-sector-double' ? 'd' : ''}`)));
-    } else if (named[kind]) {
-      holdMs = named[kind];
-      await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, kind)));
-    } else if (['grid-demo', 'winner-demo', 'podium-demo', 'pole-demo'].includes(kind)) {
-      // Uses the drivers of whatever session is loaded in Multiviewer.
-      const order = await this.mv.currentOrder().catch(() => []);
-      if (order.length < 3) return -1;
-      if (kind === 'grid-demo') {
-        holdMs = Math.ceil(order.length / 2) * 2500 + 1000;
-        custom = (c) => makeGridWalkGif(order, c.width ?? 32, c.height ?? 32);
-      } else if (kind === 'winner-demo') {
-        holdMs = this.timings.winnerHoldMs;
-        custom = (c) => makeWinnerGif(order[0], c.width ?? 32, c.height ?? 32);
-      } else if (kind === 'podium-demo') {
-        custom = (c) => makePodiumGif(order.slice(0, 3), c.width ?? 32, c.height ?? 32);
+      if (kind === 'yellow-map' || kind === 'yellow-map-double') {
+        // Negative results tell the UI why: no session (-1), circuit not in the dataset (-2), layout not fetched yet (-3).
+        if (this.mv.sessionId === null) return -1;
+        if (!this.mv.circuit) return this.mv.circuitStatus === 'unavailable' ? -2 : -3;
+        const sectors = String(arg ?? '5,6').split(/[,\s]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        const name = `yellowmap-${(sectors.length ? sectors : [5]).join('.')}${kind === 'yellow-map-double' ? 'd' : ''}`;
+        await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, name)));
+      } else if (kind === 'yellow-sector' || kind === 'yellow-sector-double') {
+        const n = Math.max(1, Math.min(99, Number(arg) || 1));
+        await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, `yellow-${n}${kind === 'yellow-sector-double' ? 'd' : ''}`)));
+      } else if (named[kind]) {
+        holdMs = named[kind];
+        await Promise.allSettled(targets.map((id) => this._sendGifPresetToDevice(id, kind)));
+      } else if (['grid-demo', 'winner-demo', 'podium-demo', 'pole-demo'].includes(kind)) {
+        // Uses the drivers of whatever session is loaded in Multiviewer.
+        const order = await this.mv.currentOrder().catch(() => []);
+        if (order.length < 3) return -1;
+        if (kind === 'grid-demo') {
+          holdMs = Math.ceil(order.length / 2) * 2500 + 1000;
+          custom = (c) => makeGridWalkGif(order, c.width ?? 32, c.height ?? 32);
+        } else if (kind === 'winner-demo') {
+          holdMs = this.timings.winnerHoldMs;
+          custom = (c) => makeWinnerGif(order[0], c.width ?? 32, c.height ?? 32);
+        } else if (kind === 'podium-demo') {
+          custom = (c) => makePodiumGif(order.slice(0, 3), c.width ?? 32, c.height ?? 32);
+        } else {
+          custom = (c) => makePoleGif(order[0], c.width ?? 32, c.height ?? 32);
+        }
+      } else if (kind === 'idle-next' || kind === 'idle-schedule' || kind === 'idle-podium' || kind === 'idle-standings') {
+        const data = this._idleDataSource();
+        await data.refresh().catch(() => {});
+        const name = kind;
+        const screen = this._idleScreens([name], { force: true })[0];
+        if (!screen) return -1;
+        holdMs = screen.slotMs ? screen.slotMs + 2000 : 12000;
+        custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
+      } else if (kind === 'text-big' || kind === 'text-small') {
+        // The panel's own text mode: it scrolls the text itself. Experimental.
+        // "MAX WINS @40" sets the speed (0 to 100); without it the panel's fastest setting is used.
+        const [, text = 'MAX WINS', speedText] = /^(.*?)\s*(?:@\s*(\d+))?\s*$/.exec(String(arg || '')) || [];
+        const speed = speedText === undefined ? 100 : Math.min(100, Number(speedText));
+        holdMs = 20000;
+        await Promise.allSettled(targets.map((id) => this.ble.writeToDevice(id, makeTextPayloads(text || 'MAX WINS', { height: kind === 'text-big' ? 32 : 16, speed }))));
+      } else if (kind === 'delayed') {
+        custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
+      } else if (kind === 'countdown') {
+        const seconds = Math.max(5, Math.min(600, Number(arg) || 30));
+        holdMs = seconds * 1000 + 3000;
+        custom = (c) => makeCountdownAnimation({ label: 'Q1', startRemainingMs: seconds * 1000, totalMs: seconds * 1000 }, c.width ?? 32, c.height ?? 32).gif;
+      } else if (kind === 'startup') {
+        holdMs = STARTUP_HOLD_MS + 500;
+        custom = (c) => this._gifBufferFor('startup', c);
       } else {
-        custom = (c) => makePoleGif(order[0], c.width ?? 32, c.height ?? 32);
+        return 0;
       }
-    } else if (kind === 'idle-next' || kind === 'idle-schedule' || kind === 'idle-podium' || kind === 'idle-standings') {
-      const data = this._idleDataSource();
-      await data.refresh().catch(() => {});
-      const name = kind;
-      const screen = this._idleScreens([name], { force: true })[0];
-      if (!screen) return -1;
-      holdMs = screen.slotMs ? screen.slotMs + 2000 : 12000;
-      custom = (c) => screen.build(c.width ?? 32, c.height ?? 32);
-    } else if (kind === 'text-big' || kind === 'text-small') {
-      // The panel's own text mode: it scrolls the text itself. Experimental.
-      // "MAX WINS @40" sets the speed (0 to 100); without it the panel's fastest setting is used.
-      const [, text = 'MAX WINS', speedText] = /^(.*?)\s*(?:@\s*(\d+))?\s*$/.exec(String(arg || '')) || [];
-      const speed = speedText === undefined ? 100 : Math.min(100, Number(speedText));
-      holdMs = 20000;
-      await Promise.allSettled(targets.map((id) => this.ble.writeToDevice(id, makeTextPayloads(text || 'MAX WINS', { height: kind === 'text-big' ? 32 : 16, speed }))));
-    } else if (kind === 'delayed') {
-      custom = (c) => makeCountdownGif(viewFor('Q1', null, 0), c.width ?? 32, c.height ?? 32);
-    } else if (kind === 'countdown') {
-      const seconds = Math.max(5, Math.min(600, Number(arg) || 30));
-      holdMs = seconds * 1000 + 3000;
-      custom = (c) => makeCountdownAnimation({ label: 'Q1', startRemainingMs: seconds * 1000, totalMs: seconds * 1000 }, c.width ?? 32, c.height ?? 32).gif;
-    } else if (kind === 'startup') {
-      holdMs = STARTUP_HOLD_MS + 500;
-      custom = (c) => this._gifBufferFor('startup', c);
-    } else {
-      return 0;
-    }
 
-    if (custom) {
-      await Promise.allSettled(targets.map(async (id) => {
-        const buffer = await custom(store.getDevice(id) || {});
-        await this._sendGifBuffer(id, `test-${kind}`, buffer, true, epoch);
-      }));
-    }
+      if (custom) {
+        await Promise.allSettled(targets.map(async (id) => {
+          const buffer = await custom(store.getDevice(id) || {});
+          await this._sendGifBuffer(id, `test-${kind}`, buffer, true, epoch);
+        }));
+      }
 
-    this.testTimer = setTimeout(() => {
-      this.testTimer = null;
-      if (epoch === this.displayEpoch) this._restoreDisplay();
-    }, holdMs);
-    return targets.length;
+      if (epoch === this.displayEpoch && this.testTimer === marker) {
+        clearTimeout(marker);
+        this.testTimer = setTimeout(() => {
+          this.testTimer = null;
+          if (epoch === this.displayEpoch) this._restoreDisplay();
+        }, holdMs);
+        scheduled = true;
+      }
+      return targets.length;
+    } finally {
+      // Nothing was left to restore (an early return, an error, or something newer took over): drop our marker so the
+      // idle rotation can carry on. If a newer test replaced it, that test owns it now.
+      if (!scheduled && this.testTimer === marker) {
+        clearTimeout(this.testTimer);
+        this.testTimer = null;
+      }
+    }
   }
 
   /** Puts back whatever the panels should really be showing. */

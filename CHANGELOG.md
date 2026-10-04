@@ -2,6 +2,11 @@
 
 Newest first. The app shows the entries for the versions you skipped the first time it starts after an update. Format: `## version (date)`, then `### Section` headings with `-` bullets.
 
+## 2.2.1 (2026-10-04)
+
+### Fixed
+- A Studio test button could be overwritten by an idle screen while the panel was still receiving it. A test now holds the idle screens back from the moment it is sent.
+
 ## 2.2.0 (2026-10-04)
 
 ### New
